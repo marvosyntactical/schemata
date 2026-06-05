@@ -1,0 +1,10 @@
+# Lab fMRI BOLD data (Koppe et al. 2019) — fetch via DurstewitzLab/PLRNN_SSM, see summary.md §6
+data_fmri/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# OS / editor
+.DS_Store
