@@ -92,6 +92,68 @@ class ALRNN(nn.Module):
         return ev[np.argsort(-np.abs(ev))]      # sorted by magnitude
 
     @torch.no_grad()
+    def region_matrix(self, pattern):
+        """Closed-form region Jacobian W_Omega = diag(A) + W D_Omega for a given
+        P-bit activation pattern (1 = ReLU unit active). The affine map on that
+        region is z -> W_Omega z + h. Same object as jacobian() but addressed by
+        symbol instead of state, so the equilibrium / periodic-orbit search can
+        build it for arbitrary symbol words (embedding.md sect. 5.1, 5.2)."""
+        dg = torch.ones(self.M, dtype=self.A.dtype)
+        dg[: self.P] = torch.as_tensor(pattern, dtype=self.A.dtype)
+        W = torch.diag(self.A) + self.W * dg
+        return W.numpy().astype(np.float64)
+
+    @torch.no_grad()
+    def enumerate_visited_regions(self, z0_obs, n=4000, warmup=500):
+        """Free-run once and collect the symbolic substrate the signatures read:
+          - visited regions as distinct activation patterns, each with its exact
+            closed-form Jacobian W_Omega (no 2^P enumeration -- only what the
+            trajectory actually uses, embedding.md sect. 5.1);
+          - the symbol sequence and region-to-region transition counts;
+          - the clip-activation rate. Clamping breaks the pure-affine algebra the
+            equilibrium / periodic-orbit blocks assume (z* = (I-W)^-1 h is only
+            valid in the unclipped interior), so it is measured and surfaced
+            rather than silently used.
+        Returns a dict keyed: symbols, uniq, index, regions, patterns, trans, h,
+        clip_rate."""
+        z = torch.zeros(self.M, dtype=self.A.dtype)
+        z[: self.d] = torch.as_tensor(z0_obs, dtype=self.A.dtype)
+        powers = (1 << np.arange(self.P))
+        syms, regions, patterns = [], {}, {}
+        clip_hits = 0
+        for t in range(n + warmup):
+            pat = (z[: self.P] > 0).numpy().astype(np.int8)
+            z_next = self.A * z + self._g(z) @ self.W.t() + self.h
+            if self.clip is not None:
+                z_clipped = torch.clamp(z_next, -self.clip, self.clip)
+                if t >= warmup and bool((z_next != z_clipped).any()):
+                    clip_hits += 1
+                z_next = z_clipped
+            if t >= warmup:
+                s = int((pat * powers).sum())
+                syms.append(s)
+                if s not in regions:
+                    regions[s] = self.region_matrix(pat)
+                    patterns[s] = pat
+            z = z_next
+        syms = np.asarray(syms, dtype=np.int64)
+        uniq = np.unique(syms)
+        idx = {int(s): i for i, s in enumerate(uniq)}
+        B = np.zeros((len(uniq), len(uniq)))
+        for a, b in zip(syms[:-1], syms[1:]):
+            B[idx[int(a)], idx[int(b)]] += 1
+        return {
+            "symbols": syms,
+            "uniq": uniq,
+            "index": idx,
+            "regions": regions,       # sym -> (M,M) W_Omega
+            "patterns": patterns,     # sym -> (P,) activation pattern
+            "trans": B,               # raw region-to-region transition counts
+            "h": self.h.detach().numpy().astype(np.float64),
+            "clip_rate": clip_hits / max(len(syms), 1),
+        }
+
+    @torch.no_grad()
     def itinerary(self, z0_obs, n=4000, warmup=500):
         """Free-run, return the activation-pattern sequence (as integer symbols)
         and the empirical transition matrix over visited symbols."""
