@@ -1,0 +1,2448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbit — a dynamical systems viewer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.min.js"></script>
+<style>
+:root{
+  --ink:#241f19;
+  --ink-soft:#5a5246;
+  --paper:#ebe4d6;
+  --paper-2:#e0d7c5;
+  --paper-3:#d5cab4;
+  --line:#c5b89f;
+  --clay:#b65d3a;
+  --clay-deep:#94431f;
+  --ochre:#b98e3e;
+  --moss:#6f7355;
+  --blue:#3e6e8e;
+  --blue-bright:#6fa3c7;
+  --night:#10151b;
+  --mono:ui-monospace,'SF Mono','Cascadia Mono',Menlo,Consolas,monospace;
+  --serif:'Iowan Old Style',Georgia,'Times New Roman',serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{
+  font-family:var(--serif);
+  color:var(--ink);
+  background:var(--night);
+  display:flex;
+}
+#stage{position:relative;flex:1;min-width:0;height:100%}
+#stage canvas{display:block}
+#vignette{position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at 50% 42%,transparent 55%,rgba(5,8,11,.55) 100%)}
+#menuBtn{display:none;position:fixed;top:11px;right:11px;z-index:45;
+  width:40px;height:40px;border-radius:9px;border:1px solid #2a2520;
+  background:linear-gradient(180deg,var(--paper),#e6ddcb);color:var(--ink);
+  font-size:19px;line-height:1;cursor:pointer;align-items:center;justify-content:center;padding:0;
+  box-shadow:0 3px 12px rgba(0,0,0,.4)}
+@media (max-width:760px){
+  #menuBtn{display:flex}
+  #side{position:fixed;right:0;top:0;height:100%;width:min(330px,88vw);z-index:38;
+    transform:translateX(105%);transition:transform .42s cubic-bezier(.22,.85,.3,1);
+    box-shadow:-10px 0 30px rgba(0,0,0,.55)}
+  #side.openm{transform:none}
+  #stage{width:100%}
+  #title h1{font-size:14.5px}
+  #title{right:60px}
+  #hud{display:none}
+}
+#stage canvas{touch-action:none}
+#hud{position:absolute;left:18px;bottom:14px;pointer-events:none;
+  font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:#8b97a3}
+#hud b{color:#c9b07a;font-weight:500}
+#title{position:absolute;left:18px;top:14px;pointer-events:none;color:#aab4be}
+#title h1{font-size:17px;font-weight:500;letter-spacing:.02em;color:#d6cdb8}
+#title h1 em{font-style:italic;color:#7fa6c2}
+#title p{font-size:11.5px;font-family:var(--mono);color:#5f6d7a;margin-top:3px;letter-spacing:.03em}
+
+/* ---------- sidebar ---------- */
+#side{
+  width:352px;flex:none;height:100%;overflow-y:auto;overscroll-behavior:contain;
+  background:linear-gradient(180deg,var(--paper) 0%,#e6ddcb 100%);
+  border-left:1px solid #2a2520;
+  box-shadow:-8px 0 24px rgba(0,0,0,.35);
+  padding:18px 18px 60px;
+}
+#side::-webkit-scrollbar{width:10px}
+#side::-webkit-scrollbar-thumb{background:var(--paper-3);border:2px solid var(--paper);border-radius:6px}
+.brand{padding-bottom:12px;border-bottom:1px solid var(--ink);margin-bottom:6px}
+.brand h2{font-size:20px;font-weight:600;letter-spacing:.01em}
+.brand h2 span{color:var(--clay)}
+.brand p{font-size:12px;color:var(--ink-soft);margin-top:2px;font-style:italic}
+
+.sec{border-bottom:1px solid var(--line);padding:2px 0 4px}
+.sechead{
+  list-style:none;cursor:pointer;user-select:none;
+  display:flex;align-items:baseline;gap:8px;padding:12px 0 8px;
+}
+.sechead .no{font-family:var(--mono);font-size:10px;color:var(--clay);letter-spacing:.08em}
+.sechead h3{
+  font-size:12.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  font-variant:small-caps;
+}
+.sechead .tick{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--ink-soft);transition:transform .3s cubic-bezier(.25,.8,.3,1)}
+.sec.open .sechead .tick{transform:rotate(90deg)}
+.secbody{display:grid;grid-template-rows:0fr;transition:grid-template-rows .42s cubic-bezier(.25,.8,.3,1)}
+.sec.open .secbody{grid-template-rows:1fr}
+.secinner{overflow:hidden;min-height:0;padding-bottom:8px}
+/* info icons + drawer */
+.ibtn{flex:none;width:16px;height:16px;border-radius:50%;border:1px solid var(--ink-soft);
+  background:transparent;color:var(--ink-soft);font:italic 600 10.5px var(--serif);
+  line-height:1;cursor:pointer;padding:0;margin-left:6px;align-self:center;transition:all .18s}
+.ibtn:hover{border-color:var(--clay);color:var(--clay);transform:scale(1.12)}
+.sechead .ibtn{margin-left:8px}
+.ilink{color:var(--blue);cursor:pointer;text-decoration:underline dotted}
+#infoPane{position:fixed;left:0;top:0;height:100%;width:min(440px,88vw);z-index:40;
+  background:linear-gradient(180deg,var(--paper) 0%,#e6ddcb 100%);
+  border-right:1px solid #2a2520;box-shadow:8px 0 28px rgba(0,0,0,.45);
+  transform:translateX(-104%);transition:transform .42s cubic-bezier(.22,.85,.3,1);
+  display:flex;flex-direction:column}
+#infoPane.show{transform:none}
+#infoHead{display:flex;align-items:center;gap:10px;padding:16px 20px 12px;border-bottom:1px solid var(--ink)}
+#infoHead h3{font-size:16.5px;font-weight:600}
+#infoClose{margin-left:auto;border:1px solid var(--line);background:transparent;border-radius:50%;
+  width:26px;height:26px;cursor:pointer;color:var(--ink-soft);font-size:12px;transition:all .18s;
+  display:flex;align-items:center;justify-content:center;padding:0;line-height:1}
+#infoClose:hover{border-color:var(--clay);color:var(--clay);transform:rotate(90deg)}
+#infoBody{overflow-y:auto;padding:6px 22px 48px;font-size:13.5px;line-height:1.58;color:var(--ink)}
+#infoBody::-webkit-scrollbar{width:10px}
+#infoBody::-webkit-scrollbar-thumb{background:var(--paper-3);border:2px solid var(--paper);border-radius:6px}
+#infoBody h4{margin:16px 0 6px;font-size:11.5px;font-family:var(--mono);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--clay-deep)}
+#infoBody p{margin:8px 0}
+#infoBody .katex-display{margin:10px 0;overflow-x:auto;overflow-y:hidden}
+#infoBody .katex{font-size:1.02em}
+#infoBody code{font-family:var(--mono);font-size:11px;background:var(--paper-2);padding:1px 4px;border-radius:3px}
+#infoBody .aside{font-size:12.5px;color:var(--ink-soft);border-left:2px solid var(--line);padding-left:10px;margin:10px 0;font-style:italic}
+
+.row{display:flex;gap:8px;align-items:center;margin:7px 0}
+.row label{font-size:12.5px;color:var(--ink-soft);flex:1;min-width:0}
+.row .val{font-family:var(--mono);font-size:11px;color:var(--ink)}
+select,input[type=text],input[type=number]{
+  font-family:var(--mono);font-size:12px;color:var(--ink);
+  background:#f4eee1;border:1px solid var(--line);border-radius:3px;
+  padding:5px 7px;width:108px;
+}
+select{width:100%}
+input[type=number]{width:74px;text-align:right}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+input[type=range]{flex:1.2;accent-color:var(--clay);min-width:60px}
+input[type=checkbox]{accent-color:var(--clay);width:14px;height:14px}
+.params{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin:6px 0}
+.params .p{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.params .p label{font-family:var(--mono);font-size:11px;color:var(--ink-soft)}
+
+button{
+  font-family:var(--serif);font-size:13px;letter-spacing:.02em;
+  border:1px solid var(--clay-deep);background:var(--clay);color:#f7f1e4;
+  border-radius:3px;padding:7px 13px;cursor:pointer;
+  box-shadow:0 1px 0 rgba(0,0,0,.18);
+}
+button:hover{background:#c2683f}
+button:active{transform:translateY(1px)}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--ink-soft);box-shadow:none}
+button.ghost:hover{background:var(--paper-2)}
+button.blue{background:var(--blue);border-color:#2c5269}
+button.blue:hover{background:#477b9d}
+button:disabled{opacity:.45;cursor:default;transform:none}
+.btnrow{display:flex;flex-wrap:wrap;gap:7px;margin:9px 0 3px}
+.anagrid{display:grid;grid-template-columns:1fr auto 1fr auto;gap:8px 5px;align-items:center}
+.anagrid button.ghost{width:100%;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:7px 6px}
+
+.note{font-size:11.5px;line-height:1.45;color:var(--ink-soft);margin:7px 0;font-style:italic}
+.mono-out{
+  font-family:var(--mono);font-size:11px;line-height:1.55;color:var(--ink);
+  background:#f4eee1;border:1px solid var(--line);border-radius:3px;
+  padding:8px 9px;margin:8px 0;white-space:pre-wrap;word-break:break-word;
+  max-height:240px;overflow-y:auto;
+}
+.mono-out:empty{display:none}
+.mono-out .k{color:var(--blue)}
+.mono-out .warn{color:var(--clay-deep)}
+canvas.plot{width:100%;height:120px;background:#f4eee1;border:1px solid var(--line);border-radius:3px;margin:6px 0;display:none}
+canvas.plot.show{display:block}
+#status{
+  position:fixed;left:18px;bottom:38px;width:316px;z-index:5;
+  font-family:var(--mono);font-size:11px;color:var(--ink-soft);
+  background:var(--paper-2);border:1px solid var(--line);border-radius:3px;
+  padding:6px 9px;min-height:0;display:none;
+}
+#status.show{display:block}
+.swatchline{display:flex;gap:10px;align-items:center;font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);margin:6px 0}
+.sw{display:inline-block;width:18px;height:4px;border-radius:2px;vertical-align:middle}
+.legend-data{background:linear-gradient(90deg,#b98e3e,#b65d3a)}
+.legend-model{background:var(--blue)}
+.axes3{display:flex;gap:6px;align-items:center}
+.axes3 select{width:64px}
+@media (max-width:780px){
+  body{flex-direction:column}
+  #stage{height:52%}
+  #side{width:100%;height:48%;border-left:none;border-top:1px solid #2a2520}
+  #status{display:none!important}
+}
+@media (prefers-reduced-motion:reduce){ .anim-opt{display:none} }
+</style>
+</head>
+<body>
+<aside id="infoPane" aria-hidden="true">
+  <div id="infoHead"><h3 id="infoTitle"></h3><button id="infoClose" title="close (Esc)">✕</button></div>
+  <div id="infoBody"></div>
+</aside>
+<div id="stage">
+  <button id="menuBtn" title="menu">☰</button>
+  <div id="title"><h1>Orbit <em>— phase space, observed</em></h1><p id="sysline">lorenz · σ=10 ρ=28 β=2.667</p></div>
+  <div id="vignette"></div>
+  <div id="hud">drag rotate · shift-drag / right-drag pan · wheel zoom</div>
+</div>
+
+<aside id="side">
+  <div class="brand">
+    <h2>Orbit<span>.</span></h2>
+    <p>integrate, reconstruct, measure <button class="ibtn" data-info="intro" title="what is all this?">i</button></p>
+  </div>
+
+  <!-- ============ SYSTEM ============ -->
+  <section class="sec open">
+    <div class="sechead"><span class="no">I</span><h3>System</h3><button class="ibtn" data-info="system">i</button><span class="tick">›</span></div><div class="secbody"><div class="secinner">
+    <div class="row"><label for="sysSel">Attractor</label></div>
+    <select id="sysSel"></select>
+    <div class="params" id="paramBox"></div>
+    <div class="params">
+      <div class="p"><label for="dtIn">dt</label><input id="dtIn" type="number" step="0.001" value="0.005"></div>
+      <div class="p"><label for="stepsIn">steps</label><input id="stepsIn" type="number" step="1000" value="30000"></div>
+    </div>
+    <div class="btnrow">
+      <button id="integrateBtn">Integrate</button>
+      <button id="randICBtn" class="ghost">Random start</button>
+    </div>
+    <div class="note" id="sysNote"></div>
+  </div></div></section>
+
+  <!-- ============ VIEW ============ -->
+  <section class="sec open">
+    <div class="sechead"><span class="no">II</span><h3>View</h3><button class="ibtn" data-info="view">i</button><span class="tick">›</span></div><div class="secbody"><div class="secinner">
+    <div class="row"><label>Projection (dim > 3)</label></div>
+    <div class="axes3" id="projBox">
+      <select id="projMode"><option value="pca">PCA top-3</option><option value="axes">pick axes</option></select>
+      <select id="ax0"></select><select id="ax1"></select><select id="ax2"></select>
+    </div>
+    <div class="row anim-opt"><label for="animChk">Draw orbit over time</label><input id="animChk" type="checkbox" checked></div>
+    <div class="row anim-opt"><label for="speedIn">Speed</label><input id="speedIn" type="range" min="0" max="100" value="40"></div>
+    <div class="row"><label for="rotChk">Slow auto-rotate</label><input id="rotChk" type="checkbox" checked></div>
+    <div class="row"><label for="modelChk">Show model orbit</label><input id="modelChk" type="checkbox" checked></div>
+    <div class="swatchline"><span class="sw legend-data"></span>data / system <span class="sw legend-model" style="margin-left:8px"></span>AL-RNN free run</div>
+  </div></div></section>
+
+  <!-- ============ DATA ============ -->
+  <section class="sec">
+    <div class="sechead"><span class="no">III</span><h3>Data</h3><button class="ibtn" data-info="data">i</button><span class="tick">›</span></div><div class="secbody"><div class="secinner">
+    <div class="note">CSV / TSV, rows = time, numeric columns = variables. A header row is fine. Series with 1–2 dims are shown via delay embedding.</div>
+    <div class="btnrow">
+      <button id="uploadBtn" class="ghost">Upload series…</button>
+      <input id="fileIn" type="file" accept=".csv,.tsv,.txt,.dat" style="display:none">
+      <button id="dlBtn" class="ghost">Download current</button>
+    </div>
+    <div class="row"><label>Examples</label></div>
+    <div class="btnrow">
+      <button id="exLorenz" class="ghost">Noisy Lorenz (3D)</button>
+      <button id="exVdp" class="ghost">Van der Pol (2D)</button>
+      <button id="exL96" class="ghost">Lorenz-96 (6D)</button>
+    </div>
+    <div class="mono-out" id="dataOut"></div>
+  </div></div></section>
+
+  <!-- ============ MODEL ============ -->
+  <section class="sec">
+    <div class="sechead"><span class="no">IV</span><h3>Model · AL-RNN</h3><button class="ibtn" data-info="alrnn">i</button><span class="tick">›</span></div><div class="secbody"><div class="secinner">
+    <div class="note">Almost-linear RNN (piecewise-linear SSM, <span style="font-style:normal;font-family:var(--mono);font-size:10.5px">arXiv:2506.07919</span>): z′ = Az + WΦ<sub>P</sub>(z) + h, ReLU on the last P of M units, identity readout, sparse teacher forcing every τ steps.</div>
+    <div class="params">
+      <div class="p"><label for="mM">latent M</label><input id="mM" type="number" value="16" min="2"></div>
+      <div class="p"><label for="mP">ReLU P</label><input id="mP" type="number" value="12" min="0"></div>
+      <div class="p"><label for="mTau">TF τ</label><input id="mTau" type="number" value="10" min="2"></div>
+      <div class="p"><label for="mSeq">seq len</label><input id="mSeq" type="number" value="100" min="10"></div>
+      <div class="p"><label for="mBatch">batch</label><input id="mBatch" type="number" value="12" min="1"></div>
+      <div class="p"><label for="mIters">iters</label><input id="mIters" type="number" value="600" min="10"></div>
+      <div class="p"><label for="mLr">lr</label><input id="mLr" type="number" value="0.003" step="0.001"></div>
+      <div class="p"><label for="mStride">stride</label><input id="mStride" type="number" value="1" min="1"></div>
+    </div>
+    <div class="btnrow">
+      <button id="trainBtn">Train on current series</button>
+      <button id="stopBtn" class="ghost" disabled>Stop</button>
+      <button id="genBtn" class="blue" disabled>Free-run</button>
+    </div>
+    <canvas class="plot" id="lossPlot"></canvas>
+    <div class="mono-out" id="modelOut"></div>
+    <div class="note" id="backendNote"></div>
+  </div></div></section>
+
+  <!-- ============ ANALYSIS ============ -->
+  <section class="sec">
+    <div class="sechead"><span class="no">V</span><h3>Analysis</h3><button class="ibtn" data-info="analysis">i</button><span class="tick">›</span></div><div class="secbody"><div class="secinner">
+    <div class="row"><label for="anaSrc">Object of study</label></div>
+    <select id="anaSrc">
+      <option value="system">closed-form ODE (current system)</option>
+      <option value="model">trained AL-RNN</option>
+      <option value="data">raw series (data-driven only)</option>
+    </select>
+    <div class="btnrow anagrid">
+      <button id="lyapBtn" class="ghost">Lyapunov spectrum</button><button class="ibtn" data-info="lyap">i</button>
+      <button id="fpBtn" class="ghost">Fixed points</button><button class="ibtn" data-info="fp">i</button>
+      <button id="dmdBtn" class="ghost">Koopman / DMD</button><button class="ibtn" data-info="dmd">i</button>
+      <button id="d2Btn" class="ghost">Correlation dim D₂</button><button class="ibtn" data-info="d2">i</button>
+      <button id="psdBtn" class="ghost">Power spectrum</button><button class="ibtn" data-info="psd">i</button>
+      <button id="cloudBtn" class="ghost">Sensitive dependence</button><button class="ibtn" data-info="chaos">i</button>
+      <button id="rvBtn" class="ghost">Free-run vs data</button><button class="ibtn" data-info="dstsp">i</button>
+      <button id="basinBtn" class="ghost">Basins (2D)</button><button class="ibtn" data-info="basin">i</button>
+    </div>
+    <div class="mono-out" id="anaOut"></div>
+    <canvas class="plot" id="dmdPlot"></canvas>
+    <canvas class="plot" id="d2Plot"></canvas>
+    <canvas class="plot" id="psdPlot"></canvas>
+    <canvas class="plot" id="lyapPlot"></canvas>
+    <canvas class="plot" id="basinPlot"></canvas>
+    <div class="mono-out" id="xrefOut" style="display:none"></div>
+    <div class="note">Lyapunov exponents, fixed points and the divergence demo need vector-field access: a closed-form ODE or the trained piecewise-linear model. DMD, D₂ and spectra run on any series. <span class="ilink" data-info="analysis">which source gives what?</span></div>
+  </div></div></section>
+
+</aside>
+<div id="status"></div>
+
+<script>
+/* ================= dynamical systems core (DOM-free) ================= */
+"use strict";
+
+/* ---------- small linear algebra ---------- */
+function zeros(n){ return new Float64Array(n); }
+function matvec(A, x, n, m, out){ // A: n x m row-major
+  out = out || new Float64Array(n);
+  for(let i=0;i<n;i++){ let s=0; const r=i*m; for(let j=0;j<m;j++) s+=A[r+j]*x[j]; out[i]=s; }
+  return out;
+}
+function linsolve(Ain, bin){ // Gaussian elimination with partial pivoting; A: n x n array-of-rows copy-safe
+  const n = bin.length;
+  const A = Ain.map(r=>r.slice());
+  const b = bin.slice();
+  for(let c=0;c<n;c++){
+    let p=c, mx=Math.abs(A[c][c]);
+    for(let r=c+1;r<n;r++){ const v=Math.abs(A[r][c]); if(v>mx){mx=v;p=r;} }
+    if(mx<1e-13) return null;
+    if(p!==c){ const t=A[p];A[p]=A[c];A[c]=t; const tb=b[p];b[p]=b[c];b[c]=tb; }
+    const piv=A[c][c];
+    for(let r=c+1;r<n;r++){
+      const f=A[r][c]/piv; if(f===0) continue;
+      for(let k=c;k<n;k++) A[r][k]-=f*A[c][k];
+      b[r]-=f*b[c];
+    }
+  }
+  const x=new Float64Array(n);
+  for(let r=n-1;r>=0;r--){
+    let s=b[r];
+    for(let k=r+1;k<n;k++) s-=A[r][k]*x[k];
+    x[r]=s/A[r][r];
+  }
+  return x;
+}
+/* Modified Gram-Schmidt QR in place on column set Q (array of Float64Array), returns diag of R */
+function mgsQR(Q){
+  const k=Q.length, n=Q[0].length, rdiag=new Float64Array(k);
+  for(let j=0;j<k;j++){
+    const qj=Q[j];
+    for(let i=0;i<j;i++){
+      const qi=Q[i]; let d=0;
+      for(let t=0;t<n;t++) d+=qi[t]*qj[t];
+      for(let t=0;t<n;t++) qj[t]-=d*qi[t];
+    }
+    let nm=0; for(let t=0;t<n;t++) nm+=qj[t]*qj[t];
+    nm=Math.sqrt(nm); rdiag[j]=nm;
+    const inv=nm>1e-300?1/nm:0;
+    for(let t=0;t<n;t++) qj[t]*=inv;
+  }
+  return rdiag;
+}
+
+/* ---------- predefined systems ---------- */
+const SYSTEMS = {
+  lorenz: {
+    label: "Lorenz", dim: 3, dt: 0.005, steps: 30000, transient: 500,
+    params: { sigma: 10, rho: 28, beta: 8/3 },
+    ic: [1, 1, 1.05],
+    f(s, p, out){ out[0]=p.sigma*(s[1]-s[0]); out[1]=s[0]*(p.rho-s[2])-s[1]; out[2]=s[0]*s[1]-p.beta*s[2]; },
+    jac(s, p){ return [[-p.sigma,p.sigma,0],[p.rho-s[2],-1,-s[0]],[s[1],s[0],-p.beta]]; }
+  },
+  rossler: {
+    label: "Rössler", dim: 3, dt: 0.02, steps: 40000, transient: 500,
+    params: { a: 0.2, b: 0.2, c: 5.7 },
+    ic: [1, 1, 1],
+    f(s,p,out){ out[0]=-s[1]-s[2]; out[1]=s[0]+p.a*s[1]; out[2]=p.b+s[2]*(s[0]-p.c); },
+    jac(s,p){ return [[0,-1,-1],[1,p.a,0],[s[2],0,s[0]-p.c]]; }
+  },
+  thomas: {
+    label: "Thomas", dim: 3, dt: 0.05, steps: 40000, transient: 500,
+    params: { b: 0.208186 },
+    ic: [0.1, 0, 0],
+    f(s,p,out){ out[0]=Math.sin(s[1])-p.b*s[0]; out[1]=Math.sin(s[2])-p.b*s[1]; out[2]=Math.sin(s[0])-p.b*s[2]; },
+    jac(s,p){ return [[-p.b,Math.cos(s[1]),0],[0,-p.b,Math.cos(s[2])],[Math.cos(s[0]),0,-p.b]]; }
+  },
+  halvorsen: {
+    label: "Halvorsen", dim: 3, dt: 0.005, steps: 40000, transient: 1000,
+    params: { a: 1.89 },
+    ic: [-1.48, -1.51, 2.04],
+    f(s,p,out){
+      out[0]=-p.a*s[0]-4*s[1]-4*s[2]-s[1]*s[1];
+      out[1]=-p.a*s[1]-4*s[2]-4*s[0]-s[2]*s[2];
+      out[2]=-p.a*s[2]-4*s[0]-4*s[1]-s[0]*s[0];
+    },
+    jac(s,p){ return [[-p.a,-4-2*s[1],-4],[-4,-p.a,-4-2*s[2]],[-4-2*s[0],-4,-p.a]]; }
+  },
+  aizawa: {
+    label: "Aizawa", dim: 3, dt: 0.01, steps: 40000, transient: 1000,
+    params: { a:0.95, b:0.7, c:0.6, d:3.5, e:0.25, f:0.1 },
+    ic: [0.1, 0, 0],
+    f(s,p,out){
+      const x=s[0],y=s[1],z=s[2];
+      out[0]=(z-p.b)*x - p.d*y;
+      out[1]=p.d*x + (z-p.b)*y;
+      out[2]=p.c + p.a*z - z*z*z/3 - (x*x+y*y)*(1+p.e*z) + p.f*z*x*x*x;
+    },
+    jac: null // numerical fallback
+  },
+  vdp: {
+    label: "Van der Pol", dim: 2, dt: 0.01, steps: 20000, transient: 500,
+    params: { mu: 2.0 },
+    ic: [0.5, 0],
+    f(s,p,out){ out[0]=s[1]; out[1]=p.mu*(1-s[0]*s[0])*s[1]-s[0]; },
+    jac(s,p){ return [[0,1],[-2*p.mu*s[0]*s[1]-1, p.mu*(1-s[0]*s[0])]]; }
+  },
+  duffing: {
+    label: "Duffing (forced)", dim: 3, dt: 0.01, steps: 60000, transient: 2000,
+    params: { delta:0.3, alpha:-1, beta:1, gamma:0.5, omega:1.2 },
+    ic: [0.5, 0, 0],
+    note: "3rd coordinate is the drive phase θ = ωt (mod 2π).",
+    f(s,p,out){
+      out[0]=s[1];
+      out[1]=-p.delta*s[1]-p.alpha*s[0]-p.beta*s[0]*s[0]*s[0]+p.gamma*Math.cos(s[2]);
+      out[2]=p.omega;
+    },
+    jac(s,p){ return [[0,1,0],[-p.alpha-3*p.beta*s[0]*s[0],-p.delta,-p.gamma*Math.sin(s[2])],[0,0,0]]; }
+  },
+  duffing2: {
+    label: "Duffing (double well, 2D)", dim: 2, dt: 0.01, steps: 30000, transient: 300,
+    params: { delta:0.25 },
+    ic: [0.6, 0.8],
+    note: "unforced x\u0307=v, v\u0307=\u2212\u03b4v+x\u2212x\u00b3 \u2014 two stable wells at x=\u00b11; try Basins in \u00a7V.",
+    f(s,p,out){ out[0]=s[1]; out[1]=-p.delta*s[1]+s[0]-s[0]*s[0]*s[0]; },
+    jac(s,p){ return [[0,1],[1-3*s[0]*s[0],-p.delta]]; }
+  },
+  hyperrossler: {
+    label: "Hyperchaotic Rössler (4D)", dim: 4, dt: 0.01, steps: 50000, transient: 2000,
+    params: { a:0.25, b:3, c:0.5, d:0.05 },
+    ic: [-10, -6, 0, 10],
+    f(s,p,out){
+      out[0]=-s[1]-s[2];
+      out[1]=s[0]+p.a*s[1]+s[3];
+      out[2]=p.b+s[0]*s[2];
+      out[3]=-p.c*s[2]+p.d*s[3];
+    },
+    jac(s,p){ return [[0,-1,-1,0],[1,p.a,0,1],[s[2],0,s[0],0],[0,0,-p.c,p.d]]; }
+  },
+  lorenz96: {
+    label: "Lorenz-96 (N-dim)", dim: 8, dt: 0.01, steps: 40000, transient: 1000,
+    params: { F: 8, N: 8 },
+    icFn(p){ const v=new Array(p.N).fill(p.F); v[0]+=0.01; return v; },
+    redim(p){ return Math.max(4, Math.round(p.N)); },
+    f(s,p,out){
+      const N=s.length;
+      for(let i=0;i<N;i++){
+        out[i]=(s[(i+1)%N]-s[(i-2+N)%N])*s[(i-1+N)%N]-s[i]+p.F;
+      }
+    },
+    jac(s,p){
+      const N=s.length, J=[];
+      for(let i=0;i<N;i++){
+        const row=new Array(N).fill(0);
+        row[(i+1)%N]+=s[(i-1+N)%N];
+        row[(i-2+N)%N]-=s[(i-1+N)%N];
+        row[(i-1+N)%N]+=s[(i+1)%N]-s[(i-2+N)%N];
+        row[i]+=-1;
+        J.push(row);
+      }
+      return J;
+    }
+  }
+};
+
+function numericalJac(f, s, p){
+  const n=s.length, J=[], f0=new Float64Array(n), fh=new Float64Array(n);
+  f(s,p,f0);
+  for(let i=0;i<n;i++) J.push(new Array(n));
+  const x=Float64Array.from(s);
+  for(let j=0;j<n;j++){
+    const h=1e-6*(1+Math.abs(x[j]));
+    const old=x[j]; x[j]=old+h; f(x,p,fh); x[j]=old;
+    for(let i=0;i<n;i++) J[i][j]=(fh[i]-f0[i])/h;
+  }
+  return J;
+}
+
+/* ---------- RK4 integration ---------- */
+function integrate(sys, params, ic, dt, steps, transient){
+  const n=ic.length;
+  const k1=zeros(n),k2=zeros(n),k3=zeros(n),k4=zeros(n),tmp=zeros(n);
+  let s=Float64Array.from(ic);
+  const total=steps+transient;
+  const out=new Float64Array(steps*n);
+  for(let t=0;t<total;t++){
+    sys.f(s,params,k1);
+    for(let i=0;i<n;i++) tmp[i]=s[i]+0.5*dt*k1[i];
+    sys.f(tmp,params,k2);
+    for(let i=0;i<n;i++) tmp[i]=s[i]+0.5*dt*k2[i];
+    sys.f(tmp,params,k3);
+    for(let i=0;i<n;i++) tmp[i]=s[i]+dt*k3[i];
+    sys.f(tmp,params,k4);
+    for(let i=0;i<n;i++) s[i]+=dt/6*(k1[i]+2*k2[i]+2*k3[i]+k4[i]);
+    if(!isFinite(s[0])) { return out.slice(0, Math.max(1,t-transient)*n ? (t>transient?(t-transient)*n:n) : n); }
+    if(t>=transient){ out.set(s,(t-transient)*n); }
+  }
+  return out; // flat [T x n]
+}
+
+/* ---------- PCA projection (top-3) ---------- */
+function pca3(data, T, d){
+  const mean=zeros(d);
+  for(let t=0;t<T;t++) for(let j=0;j<d;j++) mean[j]+=data[t*d+j];
+  for(let j=0;j<d;j++) mean[j]/=T;
+  // covariance d x d
+  const C=zeros(d*d);
+  const stride=Math.max(1,Math.floor(T/5000)); let cnt=0;
+  for(let t=0;t<T;t+=stride){
+    cnt++;
+    for(let i=0;i<d;i++){
+      const xi=data[t*d+i]-mean[i];
+      for(let j=i;j<d;j++) C[i*d+j]+=xi*(data[t*d+j]-mean[j]);
+    }
+  }
+  for(let i=0;i<d;i++) for(let j=i;j<d;j++){ C[i*d+j]/=cnt; C[j*d+i]=C[i*d+j]; }
+  // power iteration with deflation for top 3
+  const vecs=[], vals=[];
+  const Cw=Float64Array.from(C);
+  for(let k=0;k<Math.min(3,d);k++){
+    let v=new Float64Array(d); for(let i=0;i<d;i++) v[i]=Math.random()-0.5;
+    let lam=0;
+    for(let it=0;it<200;it++){
+      const w=matvec(Cw,v,d,d);
+      let nm=0; for(let i=0;i<d;i++) nm+=w[i]*w[i];
+      nm=Math.sqrt(nm); if(nm<1e-14) break;
+      for(let i=0;i<d;i++) v[i]=w[i]/nm;
+      lam=nm;
+    }
+    vecs.push(v); vals.push(lam);
+    for(let i=0;i<d;i++) for(let j=0;j<d;j++) Cw[i*d+j]-=lam*v[i]*v[j];
+  }
+  while(vecs.length<3){ const v=zeros(d); vecs.push(v); vals.push(0); }
+  return { mean, vecs, vals };
+}
+
+/* ---------- Lyapunov spectrum, continuous-time (variational + QR) ---------- */
+function lyapunovODE(sys, params, ic, dt, steps, transient, k){
+  const n=ic.length; k=Math.min(k||n,n);
+  const jf = sys.jac ? (s)=>sys.jac(s,params) : (s)=>numericalJac(sys.f,s,params);
+  // integrate state with RK4; tangent vectors with RK4 using frozen J at substeps approximation:
+  // dQ/dt = J(x(t)) Q ; we use J at x(t) and midpoint states.
+  let s=Float64Array.from(ic);
+  const k1=zeros(n),k2=zeros(n),k3=zeros(n),k4=zeros(n),tmp=zeros(n);
+  // transient
+  for(let t=0;t<transient;t++) rk4step(sys,params,s,dt,k1,k2,k3,k4,tmp);
+  const Q=[]; for(let i=0;i<k;i++){ const v=zeros(n); v[i]=1; Q.push(v); }
+  const sums=new Float64Array(k);
+  const qrEvery=5;
+  let time=0;
+  const mid=zeros(n);
+  for(let t=0;t<steps;t++){
+    const J1=jf(s);
+    // midpoint state (half RK4-ish: just take Euler midpoint for Jacobian eval; adequate for small dt)
+    sys.f(s,params,k1);
+    for(let i=0;i<n;i++) mid[i]=s[i]+0.5*dt*k1[i];
+    const J2=jf(mid);
+    // advance state full RK4
+    rk4step(sys,params,s,dt,k1,k2,k3,k4,tmp);
+    const J3=jf(s);
+    // advance each tangent vector with RK4 on dv/dt = J v, J interpolated (J1, J2, J2, J3)
+    for(let c=0;c<k;c++){
+      const v=Q[c];
+      const a=matvec_rows(J1,v,n);
+      const b=addscaled(v,a,0.5*dt,n); const b1=matvec_rows(J2,b,n);
+      const c2=addscaled(v,b1,0.5*dt,n); const c1=matvec_rows(J2,c2,n);
+      const d2=addscaled(v,c1,dt,n); const d1=matvec_rows(J3,d2,n);
+      for(let i=0;i<n;i++) v[i]+=dt/6*(a[i]+2*b1[i]+2*c1[i]+d1[i]);
+    }
+    if((t+1)%qrEvery===0){
+      const r=mgsQR(Q);
+      for(let c=0;c<k;c++) sums[c]+=Math.log(Math.max(r[c],1e-300));
+    }
+    time+=dt;
+  }
+  const lam=[];
+  for(let c=0;c<k;c++) lam.push(sums[c]/time);
+  return lam;
+}
+function rk4step(sys,params,s,dt,k1,k2,k3,k4,tmp){
+  const n=s.length;
+  sys.f(s,params,k1);
+  for(let i=0;i<n;i++) tmp[i]=s[i]+0.5*dt*k1[i];
+  sys.f(tmp,params,k2);
+  for(let i=0;i<n;i++) tmp[i]=s[i]+0.5*dt*k2[i];
+  sys.f(tmp,params,k3);
+  for(let i=0;i<n;i++) tmp[i]=s[i]+dt*k3[i];
+  sys.f(tmp,params,k4);
+  for(let i=0;i<n;i++) s[i]+=dt/6*(k1[i]+2*k2[i]+2*k3[i]+k4[i]);
+}
+function matvec_rows(J,v,n){ const o=new Float64Array(n); for(let i=0;i<n;i++){ let s=0; const r=J[i]; for(let j=0;j<n;j++) s+=r[j]*v[j]; o[i]=s; } return o; }
+function addscaled(v,a,c,n){ const o=new Float64Array(n); for(let i=0;i<n;i++) o[i]=v[i]+c*a[i]; return o; }
+
+function kaplanYorke(lams){
+  const l=lams.slice().sort((a,b)=>b-a);
+  let s=0;
+  for(let j=0;j<l.length;j++){
+    if(s+l[j]>=0){ s+=l[j]; continue; }
+    return j + s/Math.abs(l[j]);
+  }
+  return l.length;
+}
+
+/* ---------- fixed points (Newton for ODEs) ---------- */
+function findFixedPointsODE(sys, params, data, T, d, tries){
+  const jf = sys.jac ? (s)=>sys.jac(s,params) : (s)=>numericalJac(sys.f,s,params);
+  const found=[];
+  const fv=zeros(d);
+  // data range for seeding
+  const lo=new Float64Array(d).fill(Infinity), hi=new Float64Array(d).fill(-Infinity);
+  for(let t=0;t<T;t+=7) for(let j=0;j<d;j++){ const v=data[t*d+j]; if(v<lo[j])lo[j]=v; if(v>hi[j])hi[j]=v; }
+  for(let q=0;q<(tries||40);q++){
+    let x=new Float64Array(d);
+    for(let j=0;j<d;j++) x[j]=lo[j]+Math.random()*(hi[j]-lo[j]);
+    let ok=false;
+    for(let it=0;it<80;it++){
+      sys.f(x,params,fv);
+      let nm=0; for(let j=0;j<d;j++) nm+=fv[j]*fv[j];
+      if(Math.sqrt(nm)<1e-10){ ok=true; break; }
+      const J=jf(x);
+      const dx=linsolve(J, Array.from(fv));
+      if(!dx) break;
+      let step=1, snm=0;
+      for(let j=0;j<d;j++) snm+=dx[j]*dx[j];
+      if(Math.sqrt(snm)>1e3) step=1e3/Math.sqrt(snm);
+      for(let j=0;j<d;j++) x[j]-=step*dx[j];
+      if(!isFinite(x[0])) break;
+    }
+    if(ok){
+      let dup=false;
+      for(const f of found){
+        let dd=0; for(let j=0;j<d;j++) dd+=(f.x[j]-x[j])**2;
+        if(Math.sqrt(dd)<1e-4){ dup=true; break; }
+      }
+      if(!dup) found.push({ x: Array.from(x), J: jf(x) });
+      if(found.length>=12) break;
+    }
+  }
+  return found;
+}
+
+/* ---------- DMD ---------- */
+function dmd(data, T, d, stride){
+  stride=stride||1;
+  const n=Math.floor((T-1)/stride);
+  // A = X' X^T (X X^T)^{-1}, with mean removal for conditioning? keep raw (affine part folds into eigen near 1)
+  const G=[], H=[];
+  for(let i=0;i<d;i++){ G.push(new Float64Array(d)); H.push(new Float64Array(d)); }
+  for(let t=0;t<n;t++){
+    const a=t*stride*d, b=(t*stride+stride)*d;
+    for(let i=0;i<d;i++){
+      const xi=data[a+i], yi=data[b+i];
+      for(let j=0;j<d;j++){
+        G[i][j]+=data[a+j]*xi;  // X X^T  (i,j)
+        H[i][j]+=data[a+j]*yi;  // X' X^T (i,j)
+      }
+    }
+  }
+  // ridge for stability
+  let tr=0; for(let i=0;i<d;i++) tr+=G[i][i];
+  const eps=1e-8*tr/d;
+  for(let i=0;i<d;i++) G[i][i]+=eps;
+  // Solve A G = H  => A = H G^{-1}; solve per row: A_i = solve(G^T, H_i) with G symmetric
+  const A=[];
+  for(let i=0;i<d;i++){
+    const row=linsolve(G, Array.from(H[i]));
+    A.push(row?Array.from(row):new Array(d).fill(0));
+  }
+  return A; // d x d one-step map estimate (eigen via mathjs in UI)
+}
+
+/* ---------- correlation dimension (Grassberger–Procaccia) ---------- */
+function correlationDimension(data, T, d, nSample){
+  nSample=Math.min(nSample||1500, T);
+  const idx=[];
+  const stride=T/nSample;
+  for(let i=0;i<nSample;i++) idx.push(Math.floor(i*stride));
+  const dists=[];
+  for(let a=0;a<nSample;a++){
+    const ia=idx[a]*d;
+    for(let b=a+1;b<nSample;b++){
+      const ib=idx[b]*d;
+      let s=0;
+      for(let j=0;j<d;j++){ const df=data[ia+j]-data[ib+j]; s+=df*df; }
+      dists.push(Math.sqrt(s));
+    }
+  }
+  dists.sort((a,b)=>a-b);
+  const M=dists.length;
+  const rmin=dists[Math.floor(M*0.002)]||dists[0];
+  const rmax=dists[Math.floor(M*0.5)];
+  if(!(rmin>0)||!(rmax>rmin)) return null;
+  const K=24, logr=[], logC=[];
+  for(let k=0;k<K;k++){
+    const r=rmin*Math.pow(rmax/rmin,k/(K-1));
+    // count via binary search
+    let lo=0,hi=M;
+    while(lo<hi){ const m=(lo+hi)>>1; if(dists[m]<=r) lo=m+1; else hi=m; }
+    const C=lo/M;
+    if(C>0){ logr.push(Math.log(r)); logC.push(Math.log(C)); }
+  }
+  // fit slope over middle scaling region (drop first/last quarter)
+  const i0=Math.floor(logr.length*0.25), i1=Math.ceil(logr.length*0.8);
+  let sx=0,sy=0,sxx=0,sxy=0,m=0;
+  for(let i=i0;i<i1;i++){ sx+=logr[i]; sy+=logC[i]; sxx+=logr[i]*logr[i]; sxy+=logr[i]*logC[i]; m++; }
+  const slope=(m*sxy-sx*sy)/(m*sxx-sx*sx);
+  return { D2: slope, logr, logC, fitRange:[i0,i1] };
+}
+
+/* ---------- power spectrum ---------- */
+function fftPow2(re, im){
+  const n=re.length;
+  for(let i=1,j=0;i<n;i++){
+    let bit=n>>1;
+    for(;j&bit;bit>>=1) j^=bit;
+    j^=bit;
+    if(i<j){ let t=re[i];re[i]=re[j];re[j]=t; t=im[i];im[i]=im[j];im[j]=t; }
+  }
+  for(let len=2;len<=n;len<<=1){
+    const ang=-2*Math.PI/len, wr=Math.cos(ang), wi=Math.sin(ang);
+    for(let i=0;i<n;i+=len){
+      let cwr=1,cwi=0;
+      for(let k=0;k<len/2;k++){
+        const ur=re[i+k], ui=im[i+k];
+        const vr=re[i+k+len/2]*cwr-im[i+k+len/2]*cwi;
+        const vi=re[i+k+len/2]*cwi+im[i+k+len/2]*cwr;
+        re[i+k]=ur+vr; im[i+k]=ui+vi;
+        re[i+k+len/2]=ur-vr; im[i+k+len/2]=ui-vi;
+        const nwr=cwr*wr-cwi*wi; cwi=cwr*wi+cwi*wr; cwr=nwr;
+      }
+    }
+  }
+}
+function powerSpectrum(data, T, d, dim, dt, nmax){
+  let n=1; while(n*2<=Math.min(T,nmax||65536)) n*=2;
+  const re=new Float64Array(n), im=new Float64Array(n);
+  let mean=0;
+  const off=T-n;
+  for(let t=0;t<n;t++) mean+=data[(off+t)*d+dim];
+  mean/=n;
+  for(let t=0;t<n;t++){
+    const w=0.5*(1-Math.cos(2*Math.PI*t/(n-1))); // Hann
+    re[t]=(data[(off+t)*d+dim]-mean)*w;
+  }
+  fftPow2(re,im);
+  const half=n>>1, freq=new Float64Array(half), pow=new Float64Array(half);
+  for(let k=1;k<half;k++){
+    freq[k]=k/(n*dt);
+    pow[k]=(re[k]*re[k]+im[k]*im[k])/n;
+  }
+  return { freq: freq.subarray(1), pow: pow.subarray(1) };
+}
+
+/* ================= AL-RNN (almost-linear RNN, Brenner et al. 2024/25) =================
+   z_{t+1} = diag(a) z_t + W phi_P(z_t) + h,  phi applies ReLU to the LAST P of M units.
+   Observation: identity readout on the first N latent units (data standardized).
+   Training: BPTT with sparse teacher forcing every tau steps, Adam, grad clipping. */
+class ALRNN {
+  constructor(N, M, P, seed){
+    if(M<N) throw new Error("latent dim M must be >= data dim N");
+    this.N=N; this.M=M; this.P=Math.min(P,M);
+    const rng=mulberry32(seed||42);
+    this.a=new Float64Array(M);
+    this.W=new Float64Array(M*M);
+    this.h=new Float64Array(M);
+    for(let i=0;i<M;i++) this.a[i]=0.6+0.35*rng();
+    const sc=1/Math.sqrt(M);
+    for(let i=0;i<M*M;i++) this.W[i]=(rng()*2-1)*sc*0.5;
+    // zero W's contribution onto itself initially? keep small random
+    this.adam={t:0,
+      ma:new Float64Array(M), va:new Float64Array(M),
+      mW:new Float64Array(M*M), vW:new Float64Array(M*M),
+      mh:new Float64Array(M), vh:new Float64Array(M)};
+  }
+  phi(z, out){
+    const M=this.M, L=M-this.P;
+    for(let i=0;i<L;i++) out[i]=z[i];
+    for(let i=L;i<M;i++) out[i]=z[i]>0?z[i]:0;
+  }
+  step(z, out, phiBuf){
+    const M=this.M;
+    this.phi(z, phiBuf);
+    for(let i=0;i<M;i++){
+      let s=this.a[i]*z[i]+this.h[i];
+      const r=i*M;
+      for(let j=0;j<M;j++) s+=this.W[r+j]*phiBuf[j];
+      out[i]=s;
+    }
+  }
+  /* train on standardized data: Float64Array flat [T x N] */
+  /* clean implementation used by the app */
+  train(data, T, opts, onProgress){
+    const { seqLen=80, batch=16, tau=10, lr=2e-3, iters=300, clip=2.0 } = opts||{};
+    const N=this.N, M=this.M, P=this.P, L=M-P;
+    const S=Math.min(seqLen, T-1);
+    const zs=[], phis=[], errs=[];
+    for(let t=0;t<S;t++){ zs.push(new Float64Array(M)); phis.push(new Float64Array(M)); errs.push(new Float64Array(N)); }
+    const forcedFlag=new Uint8Array(S);
+    const gA=new Float64Array(M), gW=new Float64Array(M*M), gH=new Float64Array(M);
+    const g=new Float64Array(M), gprev=new Float64Array(M);
+    const losses=[];
+    for(let it=0;it<iters;it++){
+      gA.fill(0); gW.fill(0); gH.fill(0);
+      let loss=0; const lcount=batch*(S-1)*N;
+      for(let b=0;b<batch;b++){
+        const start=Math.floor(Math.random()*(T-S-1));
+        const z0=zs[0]; z0.fill(0);
+        for(let j=0;j<N;j++) z0[j]=data[start*N+j];
+        forcedFlag.fill(0);
+        for(let t=1;t<S;t++){
+          this.phi(zs[t-1], phis[t-1]);
+          const zp=zs[t-1], ph=phis[t-1], zt=zs[t];
+          for(let i=0;i<M;i++){
+            let s=this.a[i]*zp[i]+this.h[i];
+            const r=i*M;
+            for(let j=0;j<M;j++) s+=this.W[r+j]*ph[j];
+            zt[i]=s;
+          }
+          const et=errs[t];
+          for(let j=0;j<N;j++){
+            const e=zt[j]-data[(start+t)*N+j];
+            et[j]=e; loss+=e*e;
+          }
+          if(t%tau===0 && t<S-1){
+            forcedFlag[t]=1;
+            for(let j=0;j<N;j++) zt[j]=data[(start+t)*N+j];
+          }
+        }
+        // backward through time
+        g.fill(0);
+        for(let t=S-1;t>=1;t--){
+          // gradient w.r.t. pre-force z_t: future-grad g (already zeroed on forced comps when set) + loss grad
+          const et=errs[t];
+          for(let j=0;j<N;j++) g[j]+=2*et[j]/lcount;
+          // param grads (z_t computed from zs[t-1] post-force, phis[t-1])
+          const zp=zs[t-1], ph=phis[t-1];
+          for(let i=0;i<M;i++){
+            const gi=g[i];
+            if(gi===0) continue;
+            gA[i]+=gi*zp[i];
+            gH[i]+=gi;
+            const r=i*M;
+            for(let j=0;j<M;j++) gW[r+j]+=gi*ph[j];
+          }
+          // propagate to z_{t-1}: gprev_k = a_k g_k + phi'_k * sum_i W_ik g_i
+          for(let k=0;k<M;k++){
+            let s=0;
+            for(let i=0;i<M;i++) s+=this.W[i*M+k]*g[i];
+            const dphi = (k<L) ? 1 : (zp[k]>0?1:0);
+            gprev[k]=this.a[k]*g[k]+dphi*s;
+          }
+          if(t-1>=1 && forcedFlag[t-1]){
+            for(let j=0;j<N;j++) gprev[j]=0; // forced comps carried data, cut gradient
+          }
+          g.set(gprev);
+        }
+      }
+      // clip global norm
+      let nrm=0;
+      for(let i=0;i<M;i++){ nrm+=gA[i]*gA[i]+gH[i]*gH[i]; }
+      for(let i=0;i<M*M;i++) nrm+=gW[i]*gW[i];
+      nrm=Math.sqrt(nrm);
+      const sc=nrm>clip?clip/nrm:1;
+      // Adam
+      const ad=this.adam; ad.t++;
+      const b1=0.9,b2=0.999,eps=1e-8;
+      const bc1=1-Math.pow(b1,ad.t), bc2=1-Math.pow(b2,ad.t);
+      adamUpd(this.a, gA, ad.ma, ad.va, lr, sc, b1,b2,eps,bc1,bc2);
+      adamUpd(this.h, gH, ad.mh, ad.vh, lr, sc, b1,b2,eps,bc1,bc2);
+      adamUpd(this.W, gW, ad.mW, ad.vW, lr, sc, b1,b2,eps,bc1,bc2);
+      const ml=loss/lcount;
+      losses.push(ml);
+      if(onProgress && (it%5===0 || it===iters-1)) onProgress(it, ml, losses);
+    }
+    return losses;
+  }
+  /* run with sparse TF along data to sync latent, then free-run horizon steps */
+  generate(data, T, tau, horizon, startT=0){
+    const N=this.N, M=this.M;
+    const s0=Math.max(0, Math.min(startT|0, T-3));
+    let z=new Float64Array(M), nz=new Float64Array(M), ph=new Float64Array(M);
+    for(let j=0;j<N;j++) z[j]=data[s0*N+j];
+    const sync=Math.min(T-1, s0+2000);
+    for(let t=s0+1;t<sync;t++){
+      this.step(z,nz,ph); const tmp=z; z=nz; nz=tmp;
+      if(t%tau===0) for(let j=0;j<N;j++) z[j]=data[t*N+j];
+    }
+    const out=new Float64Array(horizon*N);
+    const latent=new Float64Array(horizon*M);
+    for(let t=0;t<horizon;t++){
+      this.step(z,nz,ph); const tmp=z; z=nz; nz=tmp;
+      let zsum=0; for(let j=0;j<M;j++) zsum+=Math.abs(z[j]);
+      if(!isFinite(zsum)||zsum>1e7){ return { obs: out.slice(0,t*N), latent: latent.slice(0,t*M), diverged:true, steps:t }; }
+      for(let j=0;j<N;j++) out[t*N+j]=z[j];
+      latent.set(z, t*M);
+    }
+    return { obs: out, latent, diverged:false, steps:horizon };
+  }
+  jacobianAt(z){
+    // J = diag(a) + W * diag(phi'(z))
+    const M=this.M, L=M-this.P, J=[];
+    for(let i=0;i<M;i++){
+      const row=new Array(M);
+      const r=i*M;
+      for(let k=0;k<M;k++){
+        const dphi=(k<L)?1:(z[k]>0?1:0);
+        row[k]=this.W[r+k]*dphi+(i===k?this.a[i]:0);
+      }
+      J.push(row);
+    }
+    return J;
+  }
+  /* Lyapunov spectrum of the trained map along a generated latent orbit (exact PWL Jacobians) */
+  lyapunov(latent, steps, k){
+    const M=this.M; k=Math.min(k||M, M);
+    const Q=[]; for(let i=0;i<k;i++){ const v=new Float64Array(M); v[i]=1; Q.push(v); }
+    const sums=new Float64Array(k);
+    const n=Math.min(steps, latent.length/M);
+    const z=new Float64Array(M);
+    let count=0;
+    for(let t=0;t<n;t++){
+      for(let j=0;j<M;j++) z[j]=latent[t*M+j];
+      const J=this.jacobianAt(z);
+      for(let c=0;c<k;c++) Q[c]=matvec_rows(J,Q[c],M);
+      if((t+1)%4===0){
+        const r=mgsQR(Q);
+        for(let c=0;c<k;c++) sums[c]+=Math.log(Math.max(r[c],1e-300));
+      }
+      count++;
+    }
+    const lam=[];
+    for(let c=0;c<k;c++) lam.push(sums[c]/count); // per model step
+    return lam;
+  }
+  /* exact fixed points per linear region visited by the orbit */
+  fixedPoints(latent, steps){
+    const M=this.M, L=M-this.P, P=this.P;
+    const n=Math.min(steps, latent.length/M);
+    const seen=new Set(), regions=[];
+    for(let t=0;t<n;t+=3){
+      let key="";
+      for(let k=L;k<M;k++) key+=latent[t*M+k]>0?"1":"0";
+      if(!seen.has(key)){ seen.add(key); regions.push(key); }
+      if(regions.length>4096) break;
+    }
+    const out=[];
+    for(const key of regions){
+      // (J_D - I) z = -h with J_D = diag(a)+W D
+      const A=[];
+      for(let i=0;i<M;i++){
+        const row=new Array(M);
+        const r=i*M;
+        for(let k=0;k<M;k++){
+          const d=(k<L)?1:(key[k-L]==="1"?1:0);
+          row[k]=this.W[r+k]*d+(i===k?this.a[i]-1:0);
+        }
+        A.push(row);
+      }
+      const z=linsolve(A, Array.from(this.h, v=>-v));
+      if(!z) continue;
+      // verify region consistency
+      let okR=true;
+      for(let k=L;k<M;k++){
+        const want=key[k-L]==="1";
+        if((z[k]>0)!==want){ okR=false; break; }
+      }
+      if(!okR) continue;
+      const zz=Float64Array.from(z);
+      out.push({ z: Array.from(zz), J: this.jacobianAt(zz), region:key });
+      if(out.length>=24) break;
+    }
+    return out;
+  }
+}
+function adamUpd(p, gIn, m, v, lr, sc, b1,b2,eps,bc1,bc2){
+  for(let i=0;i<p.length;i++){
+    const gi=gIn[i]*sc;
+    m[i]=b1*m[i]+(1-b1)*gi;
+    v[i]=b2*v[i]+(1-b2)*gi*gi;
+    p[i]-=lr*(m[i]/bc1)/(Math.sqrt(v[i]/bc2)+eps);
+  }
+}
+function mulberry32(a){
+  return function(){
+    a|=0; a=a+0x6D2B79F5|0;
+    let t=Math.imul(a^a>>>15,1|a);
+    t=t+Math.imul(t^t>>>7,61|t)^t;
+    return ((t^t>>>14)>>>0)/4294967296;
+  };
+}
+
+/* standardize: returns {std data, mean, sd} */
+function standardize(data, T, d){
+  const mean=zeros(d), sd=zeros(d);
+  for(let t=0;t<T;t++) for(let j=0;j<d;j++) mean[j]+=data[t*d+j];
+  for(let j=0;j<d;j++) mean[j]/=T;
+  for(let t=0;t<T;t++) for(let j=0;j<d;j++){ const e=data[t*d+j]-mean[j]; sd[j]+=e*e; }
+  for(let j=0;j<d;j++) sd[j]=Math.sqrt(sd[j]/T)||1;
+  const out=new Float64Array(T*d);
+  for(let t=0;t<T;t++) for(let j=0;j<d;j++) out[t*d+j]=(data[t*d+j]-mean[j])/sd[j];
+  return { data: out, mean, sd };
+}
+
+/* ---------- Rosenstein largest-Lyapunov estimator (data-only) ---------- */
+function rosenstein(data, T, d, dt){
+  const stride=Math.max(1, Math.floor(T/3000));
+  const Np=Math.floor(T/stride);
+  if(Np<200) return null;
+  const X=new Float64Array(Np*d);
+  for(let i=0;i<Np;i++) for(let j=0;j<d;j++) X[i*d+j]=data[i*stride*d+j];
+  const K=Math.min(300, Math.floor(Np/5));
+  const w=Math.max(10, Math.floor(Np/50));        // temporal exclusion window
+  const lim=Np-K;
+  const nn=new Int32Array(lim).fill(-1);
+  for(let i=0;i<lim;i++){
+    let best=Infinity, bj=-1;
+    for(let j=0;j<lim;j++){
+      if(Math.abs(i-j)<=w) continue;
+      let s=0;
+      for(let q=0;q<d;q++){ const e=X[i*d+q]-X[j*d+q]; s+=e*e; }
+      if(s<best){ best=s; bj=j; }
+    }
+    nn[i]=bj;
+  }
+  const y=new Float64Array(K), cnt=new Int32Array(K);
+  for(let i=0;i<lim;i++){
+    const j=nn[i]; if(j<0) continue;
+    for(let k=0;k<K;k++){
+      let s=0;
+      for(let q=0;q<d;q++){ const e=X[(i+k)*d+q]-X[(j+k)*d+q]; s+=e*e; }
+      if(s>1e-24){ y[k]+=0.5*Math.log(s); cnt[k]++; }
+    }
+  }
+  for(let k=0;k<K;k++) y[k]=cnt[k]?y[k]/cnt[k]:NaN;
+  /* robust fit: median of local slopes over the pre-saturation region.
+     (a steepest-window fit biases high; plain LS over a fixed range is at the
+      mercy of where saturation starts; the median of finite-difference slopes
+      over the early curve is insensitive to both) */
+  const h=3;
+  const kHi=Math.max(h+2, Math.floor(K*0.4));
+  const slopes=[];
+  for(let k=1;k+h<kHi;k++){
+    if(isFinite(y[k])&&isFinite(y[k+h])) slopes.push((y[k+h]-y[k])/h);
+  }
+  if(!slopes.length) return null;
+  slopes.sort((a,b)=>a-b);
+  const med=slopes[Math.floor(slopes.length/2)];
+  const stepTime=dt*stride;
+  return { ks:Array.from({length:K},(_,k)=>k), y:Array.from(y),
+           lam1:med/stepTime, fitRange:[1,kHi], stride, stepTime };
+}
+
+/* ---------- Hankel-DMD: DMD on delay-stacked observables ---------- */
+function hankelDMD(data, T, d, q){
+  const D=d*q, Th=T-q+1;
+  const Y=new Float64Array(Th*D);
+  for(let t=0;t<Th;t++) for(let s=0;s<q;s++) for(let j=0;j<d;j++)
+    Y[t*D+s*d+j]=data[(t+s)*d+j];
+  return { A: dmd(Y,Th,D,1), D, Th };
+}
+
+/* ---------- D_stsp: KL divergence of state-space occupancy (binned) ---------- */
+function dstsp(A, Ta, B, Tb, d, bins){
+  bins=bins||12;
+  let pa=A, pb=B, dd=d;
+  if(d>3){
+    const {mean,vecs}=pca3(A,Ta,d);
+    const proj=(S,T2)=>{ const P=new Float64Array(T2*3);
+      for(let t=0;t<T2;t++) for(let k=0;k<3;k++){ let s=0; for(let j=0;j<d;j++) s+=vecs[k][j]*(S[t*d+j]-mean[j]); P[t*3+k]=s; }
+      return P; };
+    pa=proj(A,Ta); pb=proj(B,Tb); dd=3;
+  }
+  const lo=new Float64Array(dd).fill(Infinity), hi=new Float64Array(dd).fill(-Infinity);
+  for(let t=0;t<Ta;t++) for(let j=0;j<dd;j++){ const v=pa[t*dd+j]; if(v<lo[j])lo[j]=v; if(v>hi[j])hi[j]=v; }
+  for(let j=0;j<dd;j++){ const pad=0.05*(hi[j]-lo[j]||1); lo[j]-=pad; hi[j]+=pad; }
+  const nb=Math.pow(bins,dd);
+  const P=new Float64Array(nb), Q=new Float64Array(nb);
+  function fill(S,T2,H){
+    let n=0;
+    for(let t=0;t<T2;t++){
+      let idx=0, ok=true;
+      for(let j=0;j<dd;j++){
+        const v=S[t*dd+j]; if(!isFinite(v)){ ok=false; break; }
+        let b=Math.floor((v-lo[j])/(hi[j]-lo[j])*bins);
+        if(b<0)b=0; if(b>=bins)b=bins-1;
+        idx=idx*bins+b;
+      }
+      if(ok){ H[idx]++; n++; }
+    }
+    return n;
+  }
+  const na=fill(pa,Ta,P), nbq=fill(pb,Tb,Q);
+  if(!na||!nbq) return null;
+  const eps=1e-7;
+  let kl=0;
+  for(let i=0;i<nb;i++){
+    const p=P[i]/na, q=Q[i]/nbq;
+    if(p>0) kl+=p*Math.log((p+eps)/(q+eps));
+  }
+  return { kl, bins, dims:dd };
+}
+
+/* ---------- D_PSE: mean Hellinger distance between normalized power spectra ---------- */
+function dpse(A, Ta, B, Tb, d, dt){
+  let nmax=1; while(nmax*2<=Math.min(Ta,Tb,65536)) nmax*=2;
+  if(nmax<64) return null;
+  function smoothNorm(p){
+    const n=p.length, out=new Float64Array(n);
+    for(let i=0;i<n;i++){
+      let s=0,c=0;
+      for(let k=-2;k<=2;k++){ const j=i+k; if(j>=0&&j<n){ s+=p[j]; c++; } }
+      out[i]=s/c;
+    }
+    let tot=0; for(let i=0;i<n;i++) tot+=out[i];
+    if(tot<=0) return null;
+    for(let i=0;i<n;i++) out[i]/=tot;
+    return out;
+  }
+  let acc=0, m=0;
+  for(let j=0;j<d;j++){
+    const sa=smoothNorm(powerSpectrum(A,Ta,d,j,dt,nmax).pow);
+    const sb=smoothNorm(powerSpectrum(B,Tb,d,j,dt,nmax).pow);
+    if(!sa||!sb) continue;
+    let bc=0;
+    for(let i=0;i<sa.length;i++) bc+=Math.sqrt(sa[i]*sb[i]);
+    acc+=Math.sqrt(Math.max(0,1-bc)); m++;
+  }
+  return m? acc/m : null;
+}
+
+/* ---------- basin map for 2D autonomous systems ---------- */
+function basinMap(sys, params, box, m, dt, steps){
+  const labels=new Int16Array(m*m).fill(-2);
+  const finals=[];
+  const cents=[];      // cluster centroids
+  const k1=new Float64Array(2),k2=new Float64Array(2),k3=new Float64Array(2),k4=new Float64Array(2),tmp=new Float64Array(2);
+  const x=new Float64Array(2);
+  const diag=Math.hypot(box.x1-box.x0, box.y1-box.y0);
+  const tol=0.04*diag;
+  for(let iy=0;iy<m;iy++) for(let ix=0;ix<m;ix++){
+    x[0]=box.x0+(ix+0.5)/m*(box.x1-box.x0);
+    x[1]=box.y0+(iy+0.5)/m*(box.y1-box.y0);
+    let dead=false;
+    for(let t=0;t<steps;t++){
+      sys.f(x,params,k1);
+      for(let j=0;j<2;j++) tmp[j]=x[j]+dt/2*k1[j]; sys.f(tmp,params,k2);
+      for(let j=0;j<2;j++) tmp[j]=x[j]+dt/2*k2[j]; sys.f(tmp,params,k3);
+      for(let j=0;j<2;j++) tmp[j]=x[j]+dt*k3[j];   sys.f(tmp,params,k4);
+      for(let j=0;j<2;j++) x[j]+=dt/6*(k1[j]+2*k2[j]+2*k3[j]+k4[j]);
+      if(!isFinite(x[0]+x[1])||Math.abs(x[0])+Math.abs(x[1])>50*diag){ dead=true; break; }
+    }
+    const id=iy*m+ix;
+    if(dead){ labels[id]=-1; continue; }
+    let c=-1;
+    for(let q=0;q<cents.length;q++)
+      if(Math.hypot(x[0]-cents[q][0],x[1]-cents[q][1])<tol){ c=q; break; }
+    if(c<0){ cents.push([x[0],x[1]]); c=cents.length-1; }
+    labels[id]=c;
+    finals.push([x[0],x[1]]);
+  }
+  /* merge splinter clusters: endpoints of slow spirals can land >tol apart
+     while belonging to the same attractor */
+  const merge=new Array(cents.length).fill(0).map((_,i)=>i);
+  for(let a=0;a<cents.length;a++) for(let b=a+1;b<cents.length;b++){
+    if(Math.hypot(cents[a][0]-cents[b][0],cents[a][1]-cents[b][1])<2.5*tol){
+      const ra=merge[a], rb=merge[b];
+      for(let q=0;q<merge.length;q++) if(merge[q]===rb) merge[q]=ra;
+    }
+  }
+  const remap=new Map(); const outCents=[];
+  for(let i=0;i<cents.length;i++){
+    const r=merge[i];
+    if(!remap.has(r)){ remap.set(r,outCents.length); outCents.push(cents[r]); }
+  }
+  for(let i=0;i<labels.length;i++) if(labels[i]>=0) labels[i]=remap.get(merge[labels[i]]);
+  return { labels, m, centroids:outCents, k:outCents.length };
+}
+
+if(typeof module!=="undefined") module.exports={SYSTEMS,integrate,pca3,lyapunovODE,kaplanYorke,findFixedPointsODE,dmd,correlationDimension,powerSpectrum,ALRNN,standardize,linsolve,numericalJac,rosenstein,hankelDMD,dstsp,dpse,basinMap};
+
+</script>
+<script>
+"use strict";
+/* =================== boot diagnostics =================== */
+(function(){
+  function report(msg){
+    var el=document.getElementById("status");
+    if(el){ el.textContent=msg; el.classList.add("show"); el.style.background="#94431f"; el.style.color="#f4eee1"; }
+  }
+  window.addEventListener("error",function(e){
+    report("error: "+(e.message||e.type)+(e.lineno?" (line "+e.lineno+")":""));
+  });
+  window.addEventListener("unhandledrejection",function(e){
+    report("error: "+(e.reason&&e.reason.message||e.reason));
+  });
+  var missing=[];
+  if(typeof THREE==="undefined") missing.push("three.js");
+  if(typeof math==="undefined") missing.push("mathjs");
+  if(missing.length){
+    var stage=document.getElementById("stage");
+    var d=document.createElement("div");
+    d.style.cssText="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#d6cdb8;font:14px/1.6 Georgia,serif;padding:40px;z-index:50";
+    d.innerHTML="Failed to load <b>"+missing.join(" and ")+"</b> from cdnjs.cloudflare.com.<br>"+
+      "This page needs an internet connection on load; check the network, and whether an ad/privacy blocker or content-security policy is blocking cdnjs.<br>"+
+      "Hard-refresh (Ctrl/Cmd+Shift+R) once connectivity is confirmed.";
+    stage.appendChild(d);
+    report("CDN libraries failed to load: "+missing.join(", "));
+    throw new Error("missing libraries: "+missing.join(", "));
+  }
+})();
+/* =================== state =================== */
+const S = {
+  sysKey: "thomas",
+  params: {},
+  source: "system",        // "system" | "data"
+  data: null, T: 0, d: 0,  // current series (raw units)
+  dt: 0.005,
+  labels: [],
+  model: null, std: null, modelStride: 1, modelTau: 10,
+  gen: null,               // {obs (raw units), latent, steps}
+  fixedPts: [],
+  stopTrain: false,
+  ana: {},
+};
+const $ = id => document.getElementById(id);
+const statusEl = $("status");
+function setStatus(msg){ if(!msg){statusEl.classList.remove("show");statusEl.textContent="";return;} statusEl.textContent=msg; statusEl.classList.add("show"); }
+function fmt(x,p=4){ return (Math.abs(x)<1e-3&&x!==0)?x.toExponential(2):(+x).toFixed(p).replace(/\.?0+$/,m=>m.includes(".")?"":m); }
+
+/* =================== three.js scene =================== */
+const stage = $("stage");
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+stage.insertBefore(renderer.domElement, stage.firstChild);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x10151b);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
+
+/* ground + axes, quiet */
+const grid = new THREE.GridHelper(60, 24, 0x232c36, 0x1a2129);
+grid.position.y = -14;
+scene.add(grid);
+
+/* custom orbit controls (r128 ships no OrbitControls on cdnjs) */
+const ctrl = { theta:0.9, phi:1.05, r:52, target:new THREE.Vector3(0,0,0),
+               gtheta:0.9, gphi:1.05, gr:52, gtarget:new THREE.Vector3(0,0,0), auto:true };
+function applyCamera(){
+  const sp=Math.sin(ctrl.phi), cp=Math.cos(ctrl.phi), st=Math.sin(ctrl.theta), ctt=Math.cos(ctrl.theta);
+  camera.position.set(
+    ctrl.target.x + ctrl.r*sp*ctt,
+    ctrl.target.y + ctrl.r*cp,
+    ctrl.target.z + ctrl.r*sp*st);
+  camera.lookAt(ctrl.target);
+}
+(function attachControls(el){
+  let mode=null, px=0, py=0, pinch=0, twoFinger=false;
+  const ROT=0.0055, PANK=0.0021;
+  function pan(dx,dy){
+    const right=new THREE.Vector3(), up=new THREE.Vector3();
+    camera.matrix.extractBasis(right,up,new THREE.Vector3());
+    ctrl.gtarget.addScaledVector(right,-dx*PANK*ctrl.r);
+    ctrl.gtarget.addScaledVector(up, dy*PANK*ctrl.r);
+  }
+  el.addEventListener("contextmenu",e=>e.preventDefault());
+  el.addEventListener("pointerdown",e=>{
+    el.setPointerCapture(e.pointerId);
+    mode=(e.button===2||e.shiftKey)?"pan":"rot"; px=e.clientX; py=e.clientY; ctrl.auto=false; $("rotChk").checked=false;
+  });
+  el.addEventListener("pointermove",e=>{
+    if(!mode||twoFinger) return;
+    const dx=e.clientX-px, dy=e.clientY-py; px=e.clientX; py=e.clientY;
+    if(mode==="rot"){ ctrl.gtheta+=dx*ROT; ctrl.gphi=Math.min(Math.PI-0.05,Math.max(0.05,ctrl.gphi-dy*ROT)); }
+    else pan(dx,dy);
+  });
+  el.addEventListener("pointerup",()=>mode=null);
+  el.addEventListener("wheel",e=>{ e.preventDefault(); ctrl.gr*=Math.pow(1.0011,e.deltaY); ctrl.gr=Math.min(300,Math.max(3,ctrl.gr)); },{passive:false});
+  el.addEventListener("touchstart",e=>{ twoFinger=e.touches.length>=2; if(twoFinger){ pinch=touchDist(e); mode=null; } },{passive:true});
+  el.addEventListener("touchend",e=>{ twoFinger=e.touches.length>=2; },{passive:true});
+  el.addEventListener("touchmove",e=>{
+    if(e.touches.length===2){ const d=touchDist(e); if(pinch>0){ ctrl.gr*=pinch/d; ctrl.gr=Math.min(300,Math.max(3,ctrl.gr)); } pinch=d; }
+  },{passive:true});
+  function touchDist(e){ const a=e.touches[0],b=e.touches[1]; return Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY); }
+})(renderer.domElement);
+
+function resize(){
+  const w=stage.clientWidth, h=stage.clientHeight;
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+addEventListener("resize",resize);
+
+/* trajectory objects */
+let dataLine=null, modelLine=null, headDot=null, fpGroup=new THREE.Group();
+scene.add(fpGroup);
+let drawT=0, drawTotal=0;
+let modelDrawT=0, modelDrawTotal=0;
+
+const C_OCHRE=new THREE.Color(0xd8a855), C_CLAY=new THREE.Color(0xc96f47), C_BLUE=new THREE.Color(0x6fa3c7);
+
+function buildLine(positions, n, colA, colB){
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(positions,3));
+  const cols=new Float32Array(n*3);
+  const c=new THREE.Color();
+  for(let i=0;i<n;i++){
+    c.copy(colA).lerp(colB, i/(n-1||1));
+    cols[i*3]=c.r; cols[i*3+1]=c.g; cols[i*3+2]=c.b;
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(cols,3));
+  const mat=new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.92});
+  return new THREE.Line(geo,mat);
+}
+
+/* project flat data [T x d] -> Float32Array positions [T x 3], centered/scaled to radius ~16 */
+function projectSeries(data, T, d){
+  let P;
+  const mode=$("projMode").value;
+  let dispD=d, src=data;
+  if(d===1||d===2){ // delay embed for display
+    const lag=Math.max(2,Math.round(0.01*T));
+    const Te=T-2*lag;
+    src=new Float64Array(Te*3);
+    for(let t=0;t<Te;t++){
+      src[t*3]=data[t*d];
+      src[t*3+1]=d===2?data[t*d+1]:data[(t+lag)*d];
+      src[t*3+2]=d===2?data[(t+lag)*d]:data[(t+2*lag)*d];
+    }
+    T=Te; dispD=3;
+  }
+  if(dispD===3){
+    P=new Float32Array(T*3);
+    for(let i=0;i<T*3;i++) P[i]=src[i];
+  } else if(mode==="axes"){
+    const a=[+$("ax0").value,+$("ax1").value,+$("ax2").value];
+    P=new Float32Array(T*3);
+    for(let t=0;t<T;t++){ P[t*3]=src[t*dispD+a[0]]; P[t*3+1]=src[t*dispD+a[1]]; P[t*3+2]=src[t*dispD+a[2]]; }
+  } else {
+    const {mean,vecs}=pca3(src,T,dispD);
+    projectSeries._pca={mean,vecs};
+    P=new Float32Array(T*3);
+    for(let t=0;t<T;t++){
+      for(let k=0;k<3;k++){
+        let s=0; const v=vecs[k];
+        for(let j=0;j<dispD;j++) s+=v[j]*(src[t*dispD+j]-mean[j]);
+        P[t*3+k]=s;
+      }
+    }
+  }
+  // center + scale
+  const lo=[Infinity,Infinity,Infinity], hi=[-Infinity,-Infinity,-Infinity];
+  for(let t=0;t<T;t++) for(let k=0;k<3;k++){ const v=P[t*3+k]; if(v<lo[k])lo[k]=v; if(v>hi[k])hi[k]=v; }
+  const cx=(lo[0]+hi[0])/2, cy=(lo[1]+hi[1])/2, cz=(lo[2]+hi[2])/2;
+  const ext=Math.max(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2])||1;
+  const s=32/ext;
+  for(let t=0;t<T;t++){
+    P[t*3]=(P[t*3]-cx)*s;
+    const y=(P[t*3+2]-cz)*s, z=(P[t*3+1]-cy)*s; // map data-z to vertical
+    P[t*3+1]=y; P[t*3+2]=z;
+  }
+  return {P, T, scale:s, center:[cx,cy,cz]};
+}
+let lastProj=null;
+
+function refreshView(){
+  stopCloud();
+  if(dataLine){ scene.remove(dataLine); dataLine.geometry.dispose(); dataLine=null; }
+  if(headDot){ scene.remove(headDot); headDot=null; }
+  clearModelLine(); clearFixedPts();
+  if(!S.data||S.T<3) return;
+  lastProj=projectSeries(S.data,S.T,S.d);
+  dataLine=buildLine(lastProj.P,lastProj.T,C_OCHRE,C_CLAY);
+  scene.add(dataLine);
+  drawTotal=lastProj.T;
+  drawT=$("animChk").checked?2:drawTotal;
+  dataLine.geometry.setDrawRange(0,drawT);
+  const g=new THREE.SphereGeometry(0.32,12,12);
+  headDot=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0xf0e0b8}));
+  scene.add(headDot);
+  if(S.gen) drawModelOrbit();
+  updateProjUI();
+}
+function clearModelLine(){ if(modelLine){ scene.remove(modelLine); modelLine.geometry.dispose(); modelLine=null; } }
+function clearFixedPts(){ while(fpGroup.children.length){ const m=fpGroup.children.pop(); m.geometry.dispose(); } S.fixedPts=[]; }
+
+function drawModelOrbit(){
+  clearModelLine();
+  if(!S.gen||!lastProj) return;
+  const {obs,steps}=S.gen;
+  // reuse the same projection transform as the data view
+  const d=S.d;
+  const proj=projectSameFrame(obs,steps,d);
+  modelLine=buildLine(proj,steps,C_BLUE,new THREE.Color(0x9ec6e0));
+  modelLine.visible=$("modelChk").checked;
+  modelDrawTotal=steps; modelDrawT=2;
+  modelLine.geometry.setDrawRange(0,2);
+  scene.add(modelLine);
+}
+/* project additional series into the existing display frame */
+function projectSameFrame(data,T,d){
+  // recompute via same path; acceptable approximation: rerun projectSeries on concat is costly,
+  // instead apply identical pipeline parameters: for d<=3 identical transform; for PCA we re-derive
+  // from the ORIGINAL data each refresh, so transform is shared through lastProj only for d<=3.
+  if(d>=4 && $("projMode").value==="pca"){
+    // reuse the cached PCA frame of the data series (re-deriving would randomize signs)
+    const {mean,vecs}=projectSeries._pca||pca3(S.data,S.T,S.d);
+    const P=new Float32Array(T*3);
+    for(let t=0;t<T;t++) for(let k=0;k<3;k++){
+      let s=0; const v=vecs[k];
+      for(let j=0;j<d;j++) s+=v[j]*(data[t*d+j]-mean[j]);
+      P[t*3+k]=s;
+    }
+    return rescaleToFrame(P,T);
+  }
+  if(d>=4){
+    const a=[+$("ax0").value,+$("ax1").value,+$("ax2").value];
+    const P=new Float32Array(T*3);
+    for(let t=0;t<T;t++){ P[t*3]=data[t*d+a[0]]; P[t*3+1]=data[t*d+a[1]]; P[t*3+2]=data[t*d+a[2]]; }
+    return rescaleToFrame(P,T);
+  }
+  if(d<=2){
+    const lag=Math.max(2,Math.round(0.01*T));
+    if(T<=2*lag+2){
+      // too short to embed (e.g. fixed points): a fixed point's delayed copies equal itself
+      const P=new Float32Array(T*3);
+      for(let t=0;t<T;t++){
+        P[t*3]=data[t*d];
+        P[t*3+1]=d===2?data[t*d+1]:data[t*d];
+        P[t*3+2]=d===2?data[t*d+1]:data[t*d];
+      }
+      return rescaleToFrame(P,T);
+    }
+    const Te=T-2*lag;
+    const P=new Float32Array(Te*3);
+    for(let t=0;t<Te;t++){
+      P[t*3]=data[t*d];
+      P[t*3+1]=d===2?data[t*d+1]:data[(t+lag)*d];
+      P[t*3+2]=d===2?data[(t+lag)*d]:data[(t+2*lag)*d];
+    }
+    return rescaleToFrame(P,Te);
+  }
+  const P=new Float32Array(T*3);
+  for(let i=0;i<T*3;i++) P[i]=data[i];
+  return rescaleToFrame(P,T);
+}
+function rescaleToFrame(P,T){
+  const c=lastProj.center, s=lastProj.scale;
+  for(let t=0;t<T;t++){
+    const x=(P[t*3]-c[0])*s, y=(P[t*3+2]-c[2])*s, z=(P[t*3+1]-c[1])*s;
+    P[t*3]=x; P[t*3+1]=y; P[t*3+2]=z;
+  }
+  return P;
+}
+
+/* draw eigen-direction whiskers: clay = locally expanding, moss = contracting.
+   Directions are mapped into the display frame by projecting p and p+v and differencing
+   (all display projections are affine, so this is exact). Complex pairs (spiralling) are skipped. */
+function addEigenWhiskers(ptsRaw, whiskers){
+  if(!lastProj) return;
+  const d=S.d, L=2.4;
+  ptsRaw.forEach((p,i)=>{
+    if(!whiskers[i]) return;
+    for(const w of whiskers[i]){
+      const flat=new Float64Array(2*d);
+      for(let j=0;j<d;j++){ flat[j]=p[j]; flat[d+j]=p[j]+w.dir[j]; }
+      const P=projectSameFrame(flat,2,d);
+      let ux=P[3]-P[0], uy=P[4]-P[1], uz=P[5]-P[2];
+      const n=Math.hypot(ux,uy,uz); if(n<1e-9) continue;
+      ux*=L/n; uy*=L/n; uz*=L/n;
+      const g=new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(P[0]-ux,P[1]-uy,P[2]-uz),
+        new THREE.Vector3(P[0]+ux,P[1]+uy,P[2]+uz)]);
+      const m=new THREE.Line(g,new THREE.LineBasicMaterial({
+        color: w.expanding?0xd06a3e:0x8d9468, transparent:true, opacity:0.85}));
+      fpGroup.add(m);
+    }
+  });
+}
+function addFixedPointMarkers(ptsRaw, classify){
+  clearFixedPts();
+  if(!ptsRaw.length||!lastProj) return;
+  const d=S.d;
+  const flat=new Float64Array(ptsRaw.length*d);
+  ptsRaw.forEach((p,i)=>{ for(let j=0;j<d;j++) flat[i*d+j]=p[j]; });
+  const P=projectSameFrame(flat,ptsRaw.length,d);
+  const n=Math.min(ptsRaw.length, P.length/3);
+  for(let i=0;i<n;i++){
+    const col = classify[i]==="stable"?0x8d9468:(classify[i]==="unstable"?0xd06a3e:0xc79a4b);
+    const m=new THREE.Mesh(new THREE.SphereGeometry(0.55,14,14), new THREE.MeshBasicMaterial({color:col}));
+    m.position.set(P[i*3],P[i*3+1],P[i*3+2]);
+    fpGroup.add(m);
+  }
+}
+
+/* render loop */
+let lastTs=0;
+function loop(ts){
+  requestAnimationFrame(loop);
+  const dtms=Math.min(50,ts-lastTs); lastTs=ts;
+  /* critically damped glide toward goal camera */
+  const k=1-Math.exp(-dtms/110);
+  if(ctrl.auto && $("rotChk").checked) ctrl.gtheta+=0.00012*dtms;
+  ctrl.theta+=(ctrl.gtheta-ctrl.theta)*k;
+  ctrl.phi  +=(ctrl.gphi -ctrl.phi )*k;
+  ctrl.r    +=(ctrl.gr   -ctrl.r   )*k;
+  ctrl.target.lerp(ctrl.gtarget,k);
+  if(dataLine && drawT<drawTotal){
+    const sp=+$("speedIn").value;
+    drawT=Math.min(drawTotal, drawT + (sp*sp/28+2)*dtms/16);   /* fractional advance */
+    dataLine.geometry.setDrawRange(0,Math.floor(drawT));
+  }
+  if(headDot && dataLine){
+    const f=Math.max(1,Math.min(drawTotal-1.0001,drawT));
+    const i0=Math.floor(f), fr=f-i0;
+    const a=dataLine.geometry.attributes.position.array;
+    const j=(i0-1)*3, j2=i0*3;
+    headDot.position.set(a[j]+(a[j2]-a[j])*fr, a[j+1]+(a[j2+1]-a[j+1])*fr, a[j+2]+(a[j2+2]-a[j+2])*fr);
+    headDot.visible=drawT<drawTotal;
+  }
+  if(modelLine && modelDrawT<modelDrawTotal){
+    modelDrawT=Math.min(modelDrawTotal, modelDrawT+Math.max(2,modelDrawTotal*dtms/1400));
+    modelLine.geometry.setDrawRange(0,Math.floor(modelDrawT));
+  }
+  stepCloud(dtms);
+  applyCamera();
+  renderer.render(scene,camera);
+}
+
+/* =================== systems UI =================== */
+const sysSel=$("sysSel");
+for(const k in SYSTEMS){ const o=document.createElement("option"); o.value=k; o.textContent=SYSTEMS[k].label; sysSel.appendChild(o); }
+sysSel.value=S.sysKey;
+function loadSysUI(){
+  const sys=SYSTEMS[S.sysKey];
+  S.params=Object.assign({},sys.params);
+  const box=$("paramBox"); box.innerHTML="";
+  for(const p in S.params){
+    const div=document.createElement("div"); div.className="p";
+    div.innerHTML=`<label>${p}</label>`;
+    const inp=document.createElement("input"); inp.type="number"; inp.step="0.01"; inp.value=S.params[p];
+    inp.addEventListener("change",()=>{ S.params[p]=+inp.value; });
+    div.appendChild(inp); box.appendChild(div);
+  }
+  $("dtIn").value=sys.dt; $("stepsIn").value=sys.steps;
+  $("sysNote").textContent=sys.note||"";
+}
+sysSel.addEventListener("change",()=>{ S.sysKey=sysSel.value; loadSysUI(); runIntegration(); });
+
+let lastIC=null;
+function runIntegration(randomIC){
+  const sys=SYSTEMS[S.sysKey];
+  const dt=+$("dtIn").value, steps=Math.min(300000,Math.max(100,+$("stepsIn").value));
+  let ic = sys.icFn? sys.icFn(S.params) : sys.ic.slice();
+  if(sys.redim){ const n=sys.redim(S.params); if(ic.length!==n){ ic=new Array(n).fill(S.params.F||1); ic[0]+=0.01; } }
+  if(randomIC) ic=ic.map(v=>v+(Math.random()-0.5)*Math.max(1,Math.abs(v)*0.5));
+  lastIC=ic.slice();
+  setStatus("integrating "+sys.label+"…");
+  setTimeout(()=>{
+    const t0=performance.now();
+    const data=integrate(sys,S.params,ic,dt,steps,sys.transient);
+    S.data=data; S.T=Math.floor(data.length/ic.length); S.d=ic.length; S.dt=dt; S.source="system";
+    S.labels=Array.from({length:S.d},(_,i)=>"x"+(i+1));
+    S.gen=null; S.model=null; runCount=0; modelOutBase=""; S.ana={}; updateXrefs(); $("genBtn").disabled=true;
+    $("sysline").textContent=sys.label.toLowerCase()+" · "+Object.entries(S.params).map(([k,v])=>k+"="+fmt(v,3)).join(" ")+` · ${S.T.toLocaleString()} pts`;
+    refreshView();
+    $("dataOut").textContent=`source: ${sys.label} ODE\nT=${S.T}  d=${S.d}  dt=${dt}\nintegrated in ${(performance.now()-t0).toFixed(0)} ms (RK4)`;
+    setStatus();
+  },20);
+}
+$("integrateBtn").addEventListener("click",()=>runIntegration(false));
+$("randICBtn").addEventListener("click",()=>runIntegration(true));
+
+/* projection UI */
+function updateProjUI(){
+  const many=S.d>3;
+  $("projBox").style.opacity=many?1:0.45;
+  ["projMode","ax0","ax1","ax2"].forEach(id=>$(id).disabled=!many);
+  const axSels=[$("ax0"),$("ax1"),$("ax2")];
+  axSels.forEach((sel,k)=>{
+    const prev=sel.value;
+    sel.innerHTML="";
+    for(let j=0;j<S.d;j++){ const o=document.createElement("option"); o.value=j; o.textContent=S.labels[j]||("x"+(j+1)); sel.appendChild(o); }
+    sel.value=(prev!==""&&+prev<S.d)?prev:String(Math.min(k,S.d-1));
+  });
+  const axMode=$("projMode").value==="axes";
+  axSels.forEach(s=>s.style.display=(many&&axMode)?"":"none");
+}
+["projMode","ax0","ax1","ax2"].forEach(id=>$(id).addEventListener("change",()=>{ refreshView(); }));
+$("animChk").addEventListener("change",()=>{ drawT=$("animChk").checked?2:drawTotal; if(dataLine)dataLine.geometry.setDrawRange(0,drawT); });
+$("modelChk").addEventListener("change",()=>{ if(modelLine) modelLine.visible=$("modelChk").checked; });
+
+/* =================== data section =================== */
+$("uploadBtn").addEventListener("click",()=>$("fileIn").click());
+$("fileIn").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{ try{ ingestCSV(String(rd.result), f.name); }catch(err){ $("dataOut").textContent="parse error: "+err.message; } };
+  rd.readAsText(f);
+});
+function ingestCSV(text,name){
+  const lines=text.split(/\r?\n/).filter(l=>l.trim().length);
+  if(lines.length<10) throw new Error("need ≥ 10 rows");
+  const delim=[",",";","\t"].find(d=>lines[1].includes(d))||/\s+/;
+  let start=0, head=lines[0].split(delim).map(s=>s.trim());
+  const headNumeric=head.every(h=>h!==""&&isFinite(+h));
+  let labels;
+  if(!headNumeric){ labels=head; start=1; } else labels=null;
+  const rows=[];
+  for(let i=start;i<lines.length && rows.length<200000;i++){
+    const parts=lines[i].split(delim).map(s=>+s);
+    if(parts.some(v=>!isFinite(v))) continue;
+    rows.push(parts);
+  }
+  if(rows.length<10) throw new Error("no numeric rows found");
+  const d=rows[0].length;
+  const T=rows.length;
+  const data=new Float64Array(T*d);
+  for(let t=0;t<T;t++) for(let j=0;j<d;j++) data[t*d+j]=rows[t][j];
+  S.data=data; S.T=T; S.d=d; S.dt=1; S.source="data";
+  S.labels=labels&&labels.length===d?labels:Array.from({length:d},(_,i)=>"x"+(i+1));
+  S.gen=null; S.model=null; runCount=0; modelOutBase=""; S.ana={}; updateXrefs(); $("genBtn").disabled=true;
+  $("anaSrc").value="data";
+  $("sysline").textContent=`${name} · T=${T} · d=${d}`;
+  $("dataOut").textContent=`source: ${name}\nT=${T}  d=${d}  (dt unknown → 1 per sample)\ncolumns: ${S.labels.join(", ")}`;
+  refreshView();
+}
+$("dlBtn").addEventListener("click",()=>{
+  if(!S.data) return;
+  let out=S.labels.join(",")+"\n";
+  const chunks=[out];
+  for(let t=0;t<S.T;t++){
+    const row=new Array(S.d);
+    for(let j=0;j<S.d;j++) row[j]=S.data[t*S.d+j].toPrecision(7);
+    chunks.push(row.join(",")+"\n");
+  }
+  const blob=new Blob(chunks,{type:"text/csv"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download="series.csv"; a.click();
+  URL.revokeObjectURL(a.href);
+});
+/* example datasets: integrate + noise, then treat as uploaded data */
+function exampleSeries(key){
+  let sys,params,dt,steps,sub,noise,label;
+  if(key==="lorenz"){ sys=SYSTEMS.lorenz; params=sys.params; dt=0.005; steps=48000; sub=4; noise=0.35; label="noisy-lorenz.csv"; }
+  if(key==="vdp"){ sys=SYSTEMS.vdp; params=sys.params; dt=0.01; steps=30000; sub=2; noise=0.02; label="van-der-pol.csv"; }
+  if(key==="l96"){ sys=SYSTEMS.lorenz96; params=Object.assign({},sys.params,{N:6}); dt=0.01; steps=60000; sub=3; noise=0.08; label="lorenz96-6d.csv"; }
+  const ic=sys.icFn?sys.icFn(params):sys.ic.slice();
+  const raw=integrate(sys,params,ic,dt,steps,sys.transient);
+  const d=ic.length, T=Math.floor(steps/sub);
+  const data=new Float64Array(T*d);
+  for(let t=0;t<T;t++) for(let j=0;j<d;j++) data[t*d+j]=raw[t*sub*d+j]+noise*gauss();
+  S.data=data; S.T=T; S.d=d; S.dt=dt*sub; S.source="data";
+  S.labels=Array.from({length:d},(_,i)=>"x"+(i+1));
+  S.gen=null; S.model=null; runCount=0; modelOutBase=""; S.ana={}; updateXrefs(); $("genBtn").disabled=true;
+  $("anaSrc").value="data";
+  $("sysline").textContent=`${label} · T=${T} · d=${d} · obs noise σ=${noise}`;
+  $("dataOut").textContent=`example: ${label}\nT=${T}  d=${d}  dt=${fmt(S.dt,3)}\nGaussian observation noise σ=${noise}\n→ a fair target for Section IV`;
+  refreshView();
+}
+function gauss(){ let u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+$("exLorenz").addEventListener("click",()=>exampleSeries("lorenz"));
+$("exVdp").addEventListener("click",()=>exampleSeries("vdp"));
+$("exL96").addEventListener("click",()=>exampleSeries("l96"));
+
+/* =================== model section =================== */
+$("trainBtn").addEventListener("click",()=>{
+  if(!S.data){ $("modelOut").textContent="no series loaded."; return; }
+  const M=+$("mM").value, P=Math.min(+$("mP").value,M), tau=+$("mTau").value;
+  const seqLen=+$("mSeq").value, batch=+$("mBatch").value, iters=+$("mIters").value, lr=+$("mLr").value;
+  const stride=Math.max(1,Math.round(+$("mStride").value));
+  if(M<S.d){ $("modelOut").textContent=`latent M must be ≥ data dim N=${S.d}.`; return; }
+  // strided copy
+  const T=Math.floor(S.T/stride), N=S.d;
+  const dsub=new Float64Array(T*N);
+  for(let t=0;t<T;t++) for(let j=0;j<N;j++) dsub[t*N+j]=S.data[t*stride*N+j];
+  S.std=standardize(dsub,T,N);
+  S.model=new ALRNN(N,M,P,(Math.random()*1e6)|0);
+  S.modelStride=stride; S.modelTau=tau;
+  S.stopTrain=false;
+  $("trainBtn").disabled=true; $("stopBtn").disabled=false; $("genBtn").disabled=true;
+  const losses=[];
+  let it=0;
+  const t0=performance.now();
+  const lossCanvas=$("lossPlot"); lossCanvas.classList.add("show");
+  function chunk(){
+    if(S.stopTrain||it>=iters){ finish(); return; }
+    const n=Math.min(10,iters-it);
+    const ls=S.model.train(S.std.data,T,{seqLen,batch,tau,lr,iters:n});
+    losses.push(...ls); it+=n;
+    $("modelOut").innerHTML=`training… iter <span class="k">${it}/${iters}</span>   loss <span class="k">${losses[losses.length-1].toExponential(3)}</span>`;
+    plotLine(lossCanvas, losses.map((_,i)=>i), losses.map(v=>Math.log10(Math.max(v,1e-12))), {xlab:"iter",ylab:"log₁₀ MSE",color:"#3e6e8e"});
+    setTimeout(chunk,0);
+  }
+  function finish(){
+    const dtMs=performance.now()-t0;
+    $("trainBtn").disabled=false; $("stopBtn").disabled=true; $("genBtn").disabled=false;
+    const fin=losses[losses.length-1];
+    $("modelOut").innerHTML=
+`AL-RNN  N=${N} M=${M} P=${P}  (${M-P} linear units)
+sparse TF every τ=${tau} · seq ${seqLen} · batch ${batch}
+${it} Adam iters in ${(dtMs/1000).toFixed(1)} s  (CPU)
+final teacher-forced MSE (std units): <span class="k">${fin.toExponential(3)}</span>
+${fin>0.1?'<span class="warn">loss is high — more iters / larger M, or smaller τ</span>':"→ Free-run re-rolls from a new random start"}`;
+    modelOutBase=$("modelOut").innerHTML;
+    runGenerate();
+  }
+  chunk();
+});
+$("stopBtn").addEventListener("click",()=>{ S.stopTrain=true; });
+$("genBtn").addEventListener("click",runGenerate);
+let runCount=0, modelOutBase="";
+function runGenerate(){
+  if(!S.model||!S.std) return;
+  const T=S.std.data.length/S.d;
+  const horizon=Math.min(20000,Math.max(2000,Math.floor(T)));
+  /* each click warms the latent up on a DIFFERENT random window of the data,
+     so each free run starts from a different point on the attractor */
+  const span=Math.max(1,T-2200);
+  const t0=(runCount===0)?0:Math.floor(Math.random()*span);
+  runCount++;
+  const g=S.model.generate(S.std.data,T,S.modelTau,horizon,t0);
+  // de-standardize obs
+  const obs=new Float64Array(g.steps*S.d);
+  for(let t=0;t<g.steps;t++) for(let j=0;j<S.d;j++) obs[t*S.d+j]=g.obs[t*S.d+j]*S.std.sd[j]+S.std.mean[j];
+  let fin=g.steps;
+  for(let t=0;t<g.steps;t++){ let s=0; for(let j=0;j<S.d;j++) s+=Math.abs(obs[t*S.d+j]); if(!isFinite(s)||s>1e8){ fin=t; break; } }
+  S.gen={obs:obs.slice(0,fin*S.d),latent:g.latent.slice(0,fin*S.model.M),steps:fin,diverged:g.diverged||fin<g.steps};
+  drawModelOrbit();
+  if(!modelOutBase) modelOutBase=$("modelOut").innerHTML;
+  $("modelOut").innerHTML=modelOutBase+`\nfree-run <span class="k">#${runCount}</span> · latent synced on window t₀=${t0}…${t0+2000}, then ${g.steps} autonomous steps`+
+    (g.diverged?`\n<span class="warn">diverged after ${g.steps} steps — train longer or raise τ</span>`:"");
+}
+
+/* =================== analysis =================== */
+const anaOut=$("anaOut");
+function say(html){ anaOut.innerHTML=html; }
+function needModel(){ if(!S.model||!S.gen){ say('no trained model yet — this quantity is read off a vector field, and the AL-RNN <i>is</i> the vector field reconstructed from data. Train one in §IV first. <span class="ilink" data-info="analysis">which source gives what?</span>'); return true; } return false; }
+function needSystem(){ if(S.source!=="system"){ say('the current series came from a file, not a closed-form ODE, so there is no formula to differentiate. Train the AL-RNN on it (§IV) and analyse that instead. <span class="ilink" data-info="analysis">why?</span>'); return true; } return false; }
+
+$("lyapBtn").addEventListener("click",()=>{
+  const src=$("anaSrc").value;
+  if(src==="data"){
+    if(!S.data){ say("no series."); return; }
+    setStatus("Rosenstein: nearest-neighbour divergence…");
+    setTimeout(()=>{
+      const r=rosenstein(S.data,S.T,S.d,S.dt);
+      if(!r){ say("series too short for the Rosenstein estimator (need a few hundred points)."); setStatus(); return; }
+      S.ana.lam1Data=r.lam1; updateXrefs();
+      say(`λ₁ from data alone — Rosenstein nearest-neighbour method\n`+
+        `λ₁ ≈ <span class="k">${fmt(r.lam1,4)}</span> per unit time  (slope of mean log-divergence, shaded fit)\n`+
+        `caveats: a one-exponent estimate, no spectrum, no D<sub>KY</sub>; sensitive to noise, neighbour choice and fit window — treat as a sanity check, and prefer the trained model for the full spectrum. <span class="ilink" data-info="lyap">how it works</span>`);
+      plotRosen($("lyapPlot"),r);
+      setStatus();
+    },20);
+    return;
+  }
+  if(src==="system"){ if(needSystem())return;
+    setStatus("Lyapunov: integrating variational system…");
+    setTimeout(()=>{
+      const sys=SYSTEMS[S.sysKey];
+      const k=Math.min(S.d,6);
+      const lam=lyapunovODE(sys,S.params,lastIC,S.dt,Math.min(80000,Math.max(20000,S.T*2)),2000,k);
+      const ky=kaplanYorke(lam);
+      S.ana.lam1Sys=lam[0]; S.ana.kySys=ky; updateXrefs();
+      say(`Lyapunov spectrum — ${sys.label} (per unit time)\n`+
+        lam.map((l,i)=>`λ${i+1} = <span class="k">${fmt(l,4)}</span>`).join("\n")+
+        `\nKaplan–Yorke dim  D<sub>KY</sub> = <span class="k">${fmt(ky,3)}</span>`+
+        `\nΣλ = ${fmt(lam.reduce((a,b)=>a+b,0),3)} (volume contraction rate)`);
+      setStatus();
+    },20);
+  } else { if(needModel())return;
+    setStatus("Lyapunov: products of region Jacobians…");
+    setTimeout(()=>{
+      const k=Math.min(S.model.M,8);
+      const lam=S.model.lyapunov(S.gen.latent,Math.min(8000,S.gen.steps),k);
+      const ky=kaplanYorke(lam);
+      const perTime=S.dt*S.modelStride;
+      say(`Lyapunov spectrum — trained AL-RNN (exact PWL Jacobians)\nper model step:\n`+
+        lam.map((l,i)=>`λ${i+1} = <span class="k">${fmt(l,4)}</span>`).join("\n")+
+        (S.source==="system"||S.dt!==1?`\nper unit time (÷ step ${fmt(perTime,4)}):  λ₁ = <span class="k">${fmt(lam[0]/perTime,4)}</span>`:"")+
+        `\nD<sub>KY</sub> = <span class="k">${fmt(ky,3)}</span>  (of ${S.model.M}-dim latent map)`);
+      S.ana.lam1Model=lam[0]/perTime; S.ana.kyModel=ky; updateXrefs();
+      setStatus();
+    },20);
+  }
+});
+
+$("fpBtn").addEventListener("click",()=>{
+  const src=$("anaSrc").value;
+  if(src==="data"){ say('a fixed point solves f(x)=0 — it is a property of a vector field, and a finite noisy orbit almost surely never visits one. Pick the closed-form ODE, or train the AL-RNN and read its fixed points exactly. <span class="ilink" data-info="fp">details</span>'); return; }
+  if(src==="system"){ if(needSystem())return;
+    const sys=SYSTEMS[S.sysKey];
+    const fps=findFixedPointsODE(sys,S.params,S.data,S.T,S.d,80);
+    if(!fps.length){ say("no fixed points found in the sampled box (Newton, 80 seeds)."); return; }
+    const cls=[], lines=[], whisk=[];
+    fps.forEach((f,i)=>{
+      const full=safeEigsFull(f.J), ev=full?full.values:null;
+      const c=classifyContinuous(ev);
+      cls.push(c.kind);
+      const ws=[];
+      if(full&&full.vectors) full.values.forEach((lam,j)=>{
+        const v=realVec(full.vectors[j]);
+        if(v&&Math.abs(lam.re)>1e-9) ws.push({dir:v, expanding:lam.re>0});
+      });
+      whisk.push(ws);
+      lines.push(`#${i+1} (${f.x.map(v=>fmt(v,3)).join(", ")})  →  ${c.label}`);
+    });
+    addFixedPointMarkers(fps.map(f=>f.x),cls);
+    addEigenWhiskers(fps.map(f=>f.x),whisk);
+    say(`fixed points — ${sys.label} (Newton; moss=stable clay=unstable ochre=saddle)\nwhiskers = real eigen-directions: <span style="color:var(--clay)">clay expanding</span>, <span style="color:var(--moss)">moss contracting</span>; spiralling complex pairs not drawn\n`+lines.join("\n"));
+  } else { if(needModel())return;
+    const fps=S.model.fixedPoints(S.gen.latent,Math.min(8000,S.gen.steps));
+    if(!fps.length){ say("no consistent fixed point in any linear region visited by the free run."); return; }
+    const cls=[], lines=[], whisk=[];
+    const obsPts=[];
+    fps.forEach((f,i)=>{
+      const full=safeEigsFull(f.J), ev=full?full.values:null;
+      const c=classifyDiscrete(ev);
+      cls.push(c.kind);
+      // de-standardize observed coords
+      const x=[];
+      for(let j=0;j<S.d;j++) x.push(f.z[j]*S.std.sd[j]+S.std.mean[j]);
+      obsPts.push(x);
+      const ws=[];
+      if(full&&full.vectors) full.values.forEach((lam,j)=>{
+        const v=realVec(full.vectors[j]); if(!v) return;
+        const r=Math.hypot(lam.re,lam.im); if(Math.abs(r-1)<1e-9) return;
+        /* observed direction = readout (first N comps), back in raw units */
+        const dir=[]; let n=0;
+        for(let q=0;q<S.d;q++){ const c2=v[q]*S.std.sd[q]; dir.push(c2); n+=c2*c2; }
+        if(n<1e-14) return;
+        ws.push({dir, expanding:r>1});
+      });
+      whisk.push(ws);
+      lines.push(`region ${f.region}: readout (${x.map(v=>fmt(v,3)).join(", ")}) → ${c.label}`);
+    });
+    addFixedPointMarkers(obsPts,cls);
+    addEigenWhiskers(obsPts,whisk);
+    say(`fixed points — AL-RNN, solved exactly per visited linear region\n(z* = (I − A − WD<sub>Ω</sub>)⁻¹h, kept iff z* lies in its own region Ω)\n`+lines.join("\n"));
+  }
+});
+
+$("dmdBtn").addEventListener("click",()=>{
+  const src=$("anaSrc").value;
+  let data,T,d,step;
+  if(src==="model"){ if(needModel())return; data=S.gen.obs; T=S.gen.steps; d=S.d; step=S.dt*S.modelStride; }
+  else { if(!S.data){say("no series.");return;} data=S.data; T=S.T; d=S.d; step=S.dt; }
+  setStatus("DMD: least squares + eigendecomposition…");
+  setTimeout(()=>{
+    let A, hankelNote="";
+    if(src!=="model" && S.source!=="system"){
+      /* raw uploaded data: enrich observables with delays (Hankel-DMD) */
+      const q=Math.max(2,Math.min(8,Math.floor(24/d)));
+      A=hankelDMD(data,T,d,q).A;
+      hankelNote=`\nobservables: ${d} coords × ${q} delays (Hankel-DMD) — delay stacking enriches the dictionary toward the Koopman spectrum (Takens again).`;
+    } else {
+      A=dmd(data,T,d,1);
+    }
+    const ev=safeEigs(A);
+    if(!ev){ say('<span class="warn">eigendecomposition failed.</span>'); setStatus(); return; }
+    const rows=ev.map(e=>{
+      const r=Math.hypot(e.re,e.im);
+      const mu=step!==1?` μ=${fmt(Math.log(Math.max(r,1e-12))/step,3)}${e.im?`±${fmt(Math.abs(Math.atan2(e.im,e.re))/step,3)}i`:""}`:"";
+      return `λ = ${fmt(e.re,4)}${e.im>=0?"+":""}${fmt(e.im,4)}i   |λ|=${fmt(r,4)}${mu}`;
+    });
+    say(`Koopman via exact DMD on the ${src==="model"?"model free run":"observed series"}${hankelNote?"":" (state-space observables)"}\nleading one-step eigenvalues:\n`+rows.slice(0,10).join("\n")+hankelNote+
+      `\n\ncaveat: with only ${d} linear observables this is the best <i>linear</i> one-step fit — a chaotic attractor's Koopman spectrum is not captured by ${d} modes; enrich observables (delays, nonlinear dictionaries) for more.`);
+    /* dominant rotation: largest-|λ| genuinely complex eigenvalue → frequency */
+    let fD=null;
+    for(const e of ev){ if(Math.abs(e.im)>1e-6){ fD=Math.abs(Math.atan2(e.im,e.re))/step/(2*Math.PI); break; } }
+    S.ana.fDMD=fD; updateXrefs();
+    plotDMD($("dmdPlot"),ev);
+    setStatus();
+  },20);
+});
+
+$("d2Btn").addEventListener("click",()=>{
+  const src=$("anaSrc").value;
+  let data,T,d;
+  if(src==="model"){ if(needModel())return; data=S.gen.obs; T=S.gen.steps; d=S.d; }
+  else { if(!S.data){say("no series.");return;} data=S.data; T=S.T; d=S.d; }
+  setStatus("Grassberger–Procaccia: pairwise distances…");
+  setTimeout(()=>{
+    const res=correlationDimension(data,T,d,1500);
+    if(!res){ say("degenerate distances; can't estimate D₂."); setStatus(); return; }
+    say(`correlation dimension (Grassberger–Procaccia, 1 500 samples)\nD₂ ≈ <span class="k">${fmt(res.D2,3)}</span>\nslope fit over the mid scaling region (shaded in plot).\ncaveat: D₂ from finite noisy data is biased low; noise floors flatten the small-r end.`);
+    S.ana.d2=res.D2; updateXrefs();
+    plotD2($("d2Plot"),res);
+    setStatus();
+  },20);
+});
+
+$("psdBtn").addEventListener("click",()=>{
+  const src=$("anaSrc").value;
+  let data,T,d,step;
+  if(src==="model"){ if(needModel())return; data=S.gen.obs; T=S.gen.steps; d=S.d; step=S.dt*S.modelStride; }
+  else { if(!S.data){say("no series.");return;} data=S.data; T=S.T; d=S.d; step=S.dt; }
+  const ps=powerSpectrum(data,T,d,0,step||1);
+  let pk=0, pf=null;
+  for(let i=3;i<ps.freq.length;i++) if(ps.pow[i]>pk){ pk=ps.pow[i]; pf=ps.freq[i]; }
+  S.ana.fPSD=pf; updateXrefs();
+  say(`power spectrum of ${S.labels[0]||"x1"} (Hann window, ${ps.freq.length*2} pts)\nbroadband floor → chaos / noise; sharp lines → periodicity.`);
+  plotPSD($("psdPlot"),ps);
+});
+
+/* eig helpers via mathjs */
+function cnum(v){ return (typeof v==="object"&&v.re!==undefined)?{re:v.re,im:v.im}:{re:+v,im:0}; }
+function safeEigsFull(J){
+  try{
+    const r=math.eigs(math.matrix(J));
+    const vals=r.values.toArray().map(cnum);
+    let cols=null;
+    try{
+      const Vm=r.vectors.toArray();              /* mathjs 11: columns are eigenvectors */
+      cols=vals.map((_,c)=>Vm.map(row=>cnum(row[c])));
+    }catch(e){ cols=null; }
+    const idx=vals.map((_,i)=>i).sort((a,b)=>Math.hypot(vals[b].re,vals[b].im)-Math.hypot(vals[a].re,vals[a].im));
+    return { values: idx.map(i=>vals[i]), vectors: cols?idx.map(i=>cols[i]):null };
+  }catch(e){ return null; }
+}
+function safeEigs(J){ const r=safeEigsFull(J); return r?r.values:null; }
+function realVec(v){            /* eigenvector -> real array, or null if genuinely complex */
+  let mx=0; for(const c of v) mx=Math.max(mx,Math.hypot(c.re,c.im));
+  for(const c of v) if(Math.abs(c.im)>1e-7*mx) return null;
+  return v.map(c=>c.re);
+}
+function classifyContinuous(ev){
+  if(!ev) return {kind:"saddle",label:"(eig failed)"};
+  const pos=ev.filter(e=>e.re>1e-9).length, neg=ev.filter(e=>e.re<-1e-9).length;
+  const spiral=ev.some(e=>Math.abs(e.im)>1e-9);
+  if(pos===0) return {kind:"stable",label:`stable ${spiral?"spiral/focus":"node"} (all Re λ<0)`};
+  if(neg===0) return {kind:"unstable",label:`unstable ${spiral?"spiral":"node"} (all Re λ>0)`};
+  return {kind:"saddle",label:`saddle${spiral?"-focus":""} (${pos}↑ ${neg}↓)`};
+}
+function classifyDiscrete(ev){
+  if(!ev) return {kind:"saddle",label:"(eig failed)"};
+  const out=ev.filter(e=>Math.hypot(e.re,e.im)>1+1e-9).length;
+  const inn=ev.filter(e=>Math.hypot(e.re,e.im)<1-1e-9).length;
+  if(out===0) return {kind:"stable",label:"stable (all |λ|<1)"};
+  if(inn===0) return {kind:"unstable",label:"repelling (all |λ|>1)"};
+  return {kind:"saddle",label:`saddle (${out} expanding, ${inn} contracting)`};
+}
+
+/* =================== free-run vs data: DSR agreement metrics =================== */
+$("rvBtn").addEventListener("click",()=>{
+  if(needModel()) return;
+  if(!S.data){ say("no data series."); return; }
+  setStatus("D_stsp + D_PSE: occupancy and spectra…");
+  setTimeout(()=>{
+    const st=dstsp(S.data,S.T,S.gen.obs,S.gen.steps,S.d);
+    const pe=dpse(S.data,S.T,S.gen.obs,S.gen.steps,S.d,S.dt*S.modelStride);
+    if(!st&&pe==null){ say("could not compute — free run too short?"); setStatus(); return; }
+    if(st) S.ana.dstsp=st.kl;
+    if(pe!=null) S.ana.dpse=pe;
+    updateXrefs();
+    say(`free run vs data — the DSR scorecard (trajectory error is the wrong metric past 1/λ₁; these compare <i>invariants</i>)\n`+
+      (st?`D<sub>stsp</sub> = <span class="k">${fmt(st.kl,4)}</span> nats — KL divergence of state-space occupancy (${st.bins}³ bins${S.d>3?", in the data's PCA-3 frame":""}); 0 = identical attractor geometry\n`:"")+
+      (pe!=null?`D<sub>PSE</sub> = <span class="k">${fmt(pe,4)}</span> — mean Hellinger distance between normalized power spectra, per dimension; 0 = identical temporal structure, 1 = disjoint\n`:"")+
+      `read them together: low D<sub>stsp</sub> + low D<sub>PSE</sub> = right geometry <i>and</i> right timescales. A model can fake one without the other.`);
+    setStatus();
+  },20);
+});
+
+/* =================== basins of attraction (2D autonomous systems) =================== */
+$("basinBtn").addEventListener("click",()=>{
+  if(S.source!=="system"){ say('basins are computed by integrating a grid of initial conditions — that needs the closed-form vector field. (For data, the analogue would be free-running the trained model from gridded states; not implemented.)'); return; }
+  const sys=SYSTEMS[S.sysKey];
+  if(S.d!==2){ say(`basins here are implemented for 2-D autonomous systems (Van der Pol, the double-well Duffing). ${S.sysKey==="duffing"?"The forced Duffing carries its drive phase as a third coordinate, so its “basins” are stroboscopic objects — use the unforced double-well preset instead.":"The current system is "+S.d+"-D."}`); return; }
+  setStatus("basins: integrating a 100×100 grid of initial conditions…");
+  setTimeout(()=>{
+    /* box: data bounding box padded 25% */
+    let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+    for(let t=0;t<S.T;t++){ const a=S.data[t*2],b=S.data[t*2+1];
+      if(a<x0)x0=a; if(a>x1)x1=a; if(b<y0)y0=b; if(b>y1)y1=b; }
+    const px=0.25*(x1-x0||1), py=0.25*(y1-y0||1);
+    const box={x0:x0-px,x1:x1+px,y0:y0-py,y1:y1+py};
+    const m=100;
+    const res=basinMap(sys,S.params,box,m,Math.max(S.dt,0.01)*2,2500);
+    plotBasins($("basinPlot"),res,box);
+    say(`basins of attraction — ${sys.label}, ${m}×${m} initial conditions, ${res.k} attractor${res.k===1?"":"s"} found\n`+
+      res.centroids.map((c,i)=>`attractor ${i+1}: settles near (${fmt(c[0],3)}, ${fmt(c[1],3)})`).join("\n")+
+      (res.k===1?`\none basin: every initial condition in the box ends at the same attractor — global attractivity (in this window).`:
+       `\nthe boundary between colors is the stable manifold of the saddle between the wells — initial conditions are sorted by which side of it they start on.`));
+    setStatus();
+  },30);
+});
+
+/* =================== cross-references between computed quantities =================== */
+function updateXrefs(){
+  const a=S.ana, L=[];
+  if(a.kySys!==undefined && a.d2!==undefined)
+    L.push(`D<sub>KY</sub> = <span class="k">${fmt(a.kySys,3)}</span> vs D₂ = <span class="k">${fmt(a.d2,3)}</span> — two estimates of the same fractal dimension (Kaplan–Yorke conjecture: D<sub>KY</sub> ≈ D₂; GP is biased low on finite noisy data).`);
+  if(a.lam1Data!==undefined && a.lam1Sys!==undefined)
+    L.push(`λ₁: Rosenstein (data-only) <span class="k">${fmt(a.lam1Data,3)}</span> vs variational (truth) <span class="k">${fmt(a.lam1Sys,3)}</span> — same quantity, derivative-free vs derivative-based.`);
+  if(a.dstsp!==undefined && a.dpse!==undefined)
+    L.push(`agreement: D<sub>stsp</sub> <span class="k">${fmt(a.dstsp,3)}</span> (geometry) · D<sub>PSE</sub> <span class="k">${fmt(a.dpse,3)}</span> (timescales) — both ≈ 0 is what “reconstructed” means.`);
+  if(a.lam1Sys!==undefined && a.lam1Model!==undefined)
+    L.push(`λ₁ truth <span class="k">${fmt(a.lam1Sys,3)}</span> vs reconstruction <span class="k">${fmt(a.lam1Model,3)}</span> /unit time — matching the <i>spectrum</i>, not the trajectory, is the DSR success criterion.`);
+  if(a.kyModel!==undefined && a.kySys!==undefined)
+    L.push(`D<sub>KY</sub>: truth <span class="k">${fmt(a.kySys,3)}</span> vs AL-RNN <span class="k">${fmt(a.kyModel,3)}</span>.`);
+  if(a.fDMD!=null && a.fPSD!=null)
+    L.push(`dominant DMD rotation f ≈ <span class="k">${fmt(a.fDMD,4)}</span> vs PSD peak f ≈ <span class="k">${fmt(a.fPSD,4)}</span> — the eigen-phase of the linear fit and the spectral peak should agree for clean oscillations.`);
+  if(a.lam1Sys>1e-3 && a.fPSD!=null)
+    L.push(`λ₁ > 0 and a broadband spectrum are two faces of the same thing: stretching mixes frequencies.`);
+  const x=$("xrefOut");
+  if(L.length){ x.style.display="block"; x.innerHTML="cross-checks\n"+L.map(s=>"· "+s).join("\n"); }
+  else x.style.display="none";
+}
+
+/* =================== sensitive dependence: live perturbation cloud =================== */
+const CLOUD={active:false, mode:null, k:42, obj:null, eps:0, t:0,
+             sys:null, params:null, st:null, lat:null, tmpA:null, tmpB:null};
+function rk4StepInto(sys,params,x,dt,d){
+  const k1=new Float64Array(d),k2=new Float64Array(d),k3=new Float64Array(d),k4=new Float64Array(d),tmp=new Float64Array(d);
+  sys.f(x,params,k1);
+  for(let j=0;j<d;j++) tmp[j]=x[j]+dt/2*k1[j]; sys.f(tmp,params,k2);
+  for(let j=0;j<d;j++) tmp[j]=x[j]+dt/2*k2[j]; sys.f(tmp,params,k3);
+  for(let j=0;j<d;j++) tmp[j]=x[j]+dt*k3[j];   sys.f(tmp,params,k4);
+  for(let j=0;j<d;j++) x[j]+=dt/6*(k1[j]+2*k2[j]+2*k3[j]+k4[j]);
+}
+function stopCloud(){
+  CLOUD.active=false;
+  if(CLOUD.obj){ scene.remove(CLOUD.obj); CLOUD.obj.geometry.dispose(); CLOUD.obj.material.dispose(); CLOUD.obj=null; }
+  $("cloudBtn").textContent="Sensitive dependence";
+}
+$("cloudBtn").addEventListener("click",()=>{
+  if(CLOUD.active){ stopCloud(); return; }
+  const src=$("anaSrc").value;
+  if(src==="data"){ say('evolving a cloud needs a vector field to evolve it <i>with</i>. A recorded series can\'t be perturbed and re-run — that is precisely what a reconstructed model buys you. Train the AL-RNN, then run this on the model. <span class="ilink" data-info="chaos">details</span>'); return; }
+  if(src==="system" && S.source!=="system"){ needSystem(); return; }
+  if(src==="model" && (!S.model||!S.gen)){ needModel(); return; }
+  if(!lastProj||!S.data) return;
+  const k=CLOUD.k, d=S.d;
+  /* spawn an ε-ball around a random point well inside the series */
+  if(src==="system"){
+    const t0=Math.floor(S.T*0.3+Math.random()*S.T*0.6);
+    let sc=0; for(let j=0;j<d;j++) sc=Math.max(sc,Math.abs(S.data[t0*d+j]));
+    CLOUD.eps=Math.max(1e-6,1e-4*sc);
+    CLOUD.st=new Float64Array(k*d);
+    for(let i=0;i<k;i++) for(let j=0;j<d;j++)
+      CLOUD.st[i*d+j]=S.data[t0*d+j]+CLOUD.eps*(Math.random()*2-1);
+    CLOUD.sys=SYSTEMS[S.sysKey]; CLOUD.params=Object.assign({},S.params);
+    CLOUD.mode="system";
+  } else {
+    const M=S.model.M;
+    const t0=Math.floor(S.gen.steps*0.3+Math.random()*S.gen.steps*0.6);
+    CLOUD.eps=1e-4;
+    CLOUD.lat=new Float64Array(k*M);
+    for(let i=0;i<k;i++) for(let j=0;j<M;j++)
+      CLOUD.lat[i*M+j]=S.gen.latent[t0*M+j]+CLOUD.eps*(Math.random()*2-1);
+    CLOUD.tmpA=new Float64Array(M); CLOUD.tmpB=new Float64Array(M);
+    CLOUD.mode="model";
+  }
+  CLOUD.t=0;
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute("position",new THREE.BufferAttribute(new Float32Array(k*3),3));
+  CLOUD.obj=new THREE.Points(geo,new THREE.PointsMaterial({color:0x9ec6e0,size:0.55,transparent:true,opacity:0.95,sizeAttenuation:true}));
+  scene.add(CLOUD.obj);
+  CLOUD.active=true;
+  $("cloudBtn").textContent="Stop cloud";
+  say(`<span class="k">${k}</span> copies of the state, jittered by ε ≈ ${CLOUD.eps.toExponential(1)}, evolved live under the ${CLOUD.mode==="system"?"ODE":"trained AL-RNN map"}.\nWatch ball → filament → smear: stretching along unstable directions, folding back onto the attractor.\n<span id="cloudStat"></span>`);
+});
+function stepCloud(dtms){
+  if(!CLOUD.active||!lastProj) return;
+  const k=CLOUD.k, d=S.d;
+  let obs;
+  if(CLOUD.mode==="system"){
+    const sub=2;
+    for(let s=0;s<sub;s++) for(let i=0;i<k;i++)
+      rk4StepInto(CLOUD.sys,CLOUD.params,CLOUD.st.subarray(i*d,(i+1)*d),S.dt,d);
+    CLOUD.t+=sub*S.dt;
+    obs=CLOUD.st;
+  } else {
+    const M=S.model.M;
+    for(let i=0;i<k;i++){
+      const z=CLOUD.lat.subarray(i*M,(i+1)*M);
+      S.model.step(z,CLOUD.tmpA,CLOUD.tmpB);
+      z.set(CLOUD.tmpA);
+    }
+    CLOUD.t+=1;
+    obs=new Float64Array(k*d);
+    for(let i=0;i<k;i++) for(let j=0;j<d;j++)
+      obs[i*d+j]=CLOUD.lat[i*M+j]*S.std.sd[j]+S.std.mean[j];
+  }
+  /* blow-up guard: any NaN anywhere kills the cloud before it reaches the GPU */
+  let chk=0; for(let i=0;i<k*d;i++) chk+=Math.abs(obs[i]);
+  if(!isFinite(chk)||chk>1e8*k*d){ stopCloud(); return; }
+  const P=projectSameFrame(obs,k,d);
+  CLOUD.obj.geometry.attributes.position.array.set(P.subarray(0,k*3));
+  CLOUD.obj.geometry.attributes.position.needsUpdate=true;
+  /* RMS spread about the centroid, raw units */
+  const c=new Float64Array(d);
+  for(let i=0;i<k;i++) for(let j=0;j<d;j++) c[j]+=obs[i*d+j]/k;
+  let s2=0;
+  for(let i=0;i<k;i++) for(let j=0;j<d;j++){ const e=obs[i*d+j]-c[j]; s2+=e*e; }
+  const spread=Math.sqrt(s2/k);
+  const el=document.getElementById("cloudStat");
+  if(el){
+    let pred="";
+    if(CLOUD.mode==="system"&&S.ana.lam1Sys>0) pred=`   predicted ×e<sup>λ₁t</sup> = ×${fmt(Math.exp(S.ana.lam1Sys*CLOUD.t),1)}`;
+    el.innerHTML=`t = ${fmt(CLOUD.t,2)}${CLOUD.mode==="model"?" steps":""}   spread = <span class="k">${spread.toExponential(2)}</span>   growth ×${fmt(spread/Math.max(CLOUD.eps,1e-12),1)}${pred}\n(growth saturates at the attractor diameter — stretching is local, the attractor is bounded)`;
+  }
+}
+
+/* =================== tiny plot helpers =================== */
+function plotPrep(cv){
+  cv.classList.add("show");
+  const w=cv.clientWidth, h=cv.clientHeight, r=Math.min(devicePixelRatio,2);
+  cv.width=w*r; cv.height=h*r;
+  const g=cv.getContext("2d"); g.setTransform(r,0,0,r,0,0);
+  g.fillStyle="#f4eee1"; g.fillRect(0,0,w,h);
+  return {g,w,h};
+}
+function plotLine(cv,xs,ys,opt){
+  const {g,w,h}=plotPrep(cv);
+  const pad=26;
+  const xmin=Math.min(...xs),xmax=Math.max(...xs),ymin=Math.min(...ys),ymax=Math.max(...ys);
+  const X=x=>pad+(x-xmin)/((xmax-xmin)||1)*(w-pad-8);
+  const Y=y=>h-18-(y-ymin)/((ymax-ymin)||1)*(h-26);
+  g.strokeStyle="#c5b89f"; g.lineWidth=1; g.strokeRect(pad,8,w-pad-8,h-26);
+  g.strokeStyle=opt.color||"#b65d3a"; g.lineWidth=1.4; g.beginPath();
+  for(let i=0;i<xs.length;i++){ const px=X(xs[i]),py=Y(ys[i]); i?g.lineTo(px,py):g.moveTo(px,py); }
+  g.stroke();
+  g.fillStyle="#5a5246"; g.font="10px ui-monospace,monospace";
+  g.fillText(opt.ylab||"",4,14);
+  g.fillText(opt.xlab||"",w-50,h-5);
+  g.fillText(fmt(ymax,2),2,26); g.fillText(fmt(ymin,2),2,h-20);
+}
+function plotDMD(cv,ev){
+  const {g,w,h}=plotPrep(cv);
+  const cx=w/2, cy=h/2, R=Math.min(w,h)/2-12;
+  g.strokeStyle="#c5b89f"; g.beginPath(); g.arc(cx,cy,R,0,7); g.stroke();
+  g.beginPath(); g.moveTo(cx-R-6,cy); g.lineTo(cx+R+6,cy); g.moveTo(cx,cy-R-6); g.lineTo(cx,cy+R+6);
+  g.strokeStyle="#ddd3bd"; g.stroke();
+  g.fillStyle="#5a5246"; g.font="10px ui-monospace,monospace"; g.fillText("unit circle · one-step λ",6,12);
+  let maxR=1; ev.forEach(e=>maxR=Math.max(maxR,Math.hypot(e.re,e.im)));
+  const sc=R/Math.max(1.05,maxR);
+  ev.forEach(e=>{
+    g.fillStyle=Math.hypot(e.re,e.im)>1?"#b65d3a":"#3e6e8e";
+    g.beginPath(); g.arc(cx+e.re*sc, cy-e.im*sc, 3.4, 0, 7); g.fill();
+  });
+}
+function plotD2(cv,res){
+  const {g,w,h}=plotPrep(cv);
+  const pad=30, xs=res.logr, ys=res.logC;
+  const xmin=Math.min(...xs),xmax=Math.max(...xs),ymin=Math.min(...ys),ymax=Math.max(...ys);
+  const X=x=>pad+(x-xmin)/((xmax-xmin)||1)*(w-pad-10);
+  const Y=y=>h-18-(y-ymin)/((ymax-ymin)||1)*(h-28);
+  // fit band
+  const [i0,i1]=res.fitRange;
+  g.fillStyle="rgba(62,110,142,.12)";
+  g.fillRect(X(xs[i0]),10,X(xs[Math.max(i0,i1-1)])-X(xs[i0]),h-28);
+  g.strokeStyle="#c5b89f"; g.strokeRect(pad,10,w-pad-10,h-28);
+  g.fillStyle="#b65d3a";
+  for(let i=0;i<xs.length;i++){ g.beginPath(); g.arc(X(xs[i]),Y(ys[i]),2.6,0,7); g.fill(); }
+  g.fillStyle="#5a5246"; g.font="10px ui-monospace,monospace";
+  g.fillText("log C(r) vs log r — slope = D₂",6,8);
+}
+function plotRosen(cv,r){
+  const {g,w,h}=plotPrep(cv);
+  const pad=30, xs=r.ks, ys=r.y;
+  const fin=ys.filter(isFinite);
+  const xmin=0,xmax=xs[xs.length-1],ymin=Math.min(...fin),ymax=Math.max(...fin);
+  const X=x=>pad+(x-xmin)/((xmax-xmin)||1)*(w-pad-10);
+  const Y=y=>h-18-(y-ymin)/((ymax-ymin)||1)*(h-28);
+  g.fillStyle="rgba(62,110,142,.12)";
+  g.fillRect(X(r.fitRange[0]),10,X(r.fitRange[1])-X(r.fitRange[0]),h-28);
+  g.strokeStyle="#c5b89f"; g.strokeRect(pad,10,w-pad-10,h-28);
+  g.strokeStyle="#b65d3a"; g.lineWidth=1.4; g.beginPath();
+  let started=false;
+  for(let i=0;i<xs.length;i++){ if(!isFinite(ys[i]))continue; const px=X(xs[i]),py=Y(ys[i]); started?g.lineTo(px,py):g.moveTo(px,py); started=true; }
+  g.stroke();
+  g.fillStyle="#5a5246"; g.font="10px ui-monospace,monospace";
+  g.fillText("mean log divergence vs steps — slope = λ₁",6,8);
+}
+const BASIN_COLS=["#6f7355","#3e6e8e","#b98e3e","#b65d3a","#7a5d8a","#4e8a7a"];
+function plotBasins(cv,res,box){
+  const {g,w,h}=plotPrep(cv);
+  const pad=24, pw=w-pad-8, ph=h-26;
+  const m=res.m;
+  for(let iy=0;iy<m;iy++) for(let ix=0;ix<m;ix++){
+    const l=res.labels[iy*m+ix];
+    g.fillStyle = l<0 ? "#1d242c" : BASIN_COLS[l%BASIN_COLS.length];
+    g.globalAlpha = l<0?1:0.55;
+    g.fillRect(pad+ix/m*pw, 8+(1-(iy+1)/m)*ph, pw/m+0.7, ph/m+0.7);
+  }
+  g.globalAlpha=1;
+  res.centroids.forEach((c,i)=>{
+    const px=pad+(c[0]-box.x0)/(box.x1-box.x0)*pw;
+    const py=8+(1-(c[1]-box.y0)/(box.y1-box.y0))*ph;
+    g.fillStyle="#241f19"; g.beginPath(); g.arc(px,py,4.4,0,7); g.fill();
+    g.fillStyle=BASIN_COLS[i%BASIN_COLS.length]; g.beginPath(); g.arc(px,py,3,0,7); g.fill();
+  });
+  g.strokeStyle="#c5b89f"; g.strokeRect(pad,8,pw,ph);
+  g.fillStyle="#5a5246"; g.font="10px ui-monospace,monospace";
+  g.fillText("x",w-14,h-8); g.fillText("v",6,18);
+}
+function plotPSD(cv,ps){
+  const xs=[],ys=[];
+  for(let i=0;i<ps.freq.length;i++){ if(ps.pow[i]>0){ xs.push(Math.log10(ps.freq[i])); ys.push(Math.log10(ps.pow[i])); } }
+  plotLine(cv,xs,ys,{color:"#3e6e8e",xlab:"log₁₀ f",ylab:"log₁₀ S"});
+}
+
+
+/* =================== explainers =================== */
+const INFO = {
+
+intro: ["A field guide to dynamical systems", String.raw`
+<p>A <b>dynamical system</b> is a rule for how a state moves. The state is a point \(x \in \mathbb{R}^d\); the rule is either a flow,</p>
+$$\dot{x} = f(x),$$
+<p>or a map, \(x_{t+1} = F(x_t)\). Everything in this app is one of those two objects. Run the rule from an initial condition and you get a <b>trajectory</b> &mdash; the curve drawn in the viewport.</p>
+<h4>Attractors</h4>
+<p>Dissipative systems shrink phase-space volume on average, so trajectories collapse onto a lower-dimensional set, the <b>attractor</b>: a fixed point (everything halts), a limit cycle (everything ends up periodic), a torus (quasi-periodic), or a <b>strange attractor</b> &mdash; a fractal set on which motion is chaotic. The strange case is the interesting tension: volume shrinks overall, yet at least one direction stretches exponentially. Shrink globally, stretch locally, and the only way to fit is to fold &mdash; that stretch-and-fold is what makes Lorenz look like butterfly wings.</p>
+<h4>Dynamical systems reconstruction</h4>
+<p>DSR is the inverse problem: you observe a time series \(x_1, x_2, \dots\) and want to recover a system that <i>generates</i> it. The catch defines the field: if the data is chaotic, no model can match the trajectory for long, because errors of size \(\varepsilon\) grow like \(\varepsilon\, e^{\lambda_1 t}\). Prediction is hopeless past the Lyapunov time \(1/\lambda_1\). So the success criterion shifts from trajectories to <b>invariants</b>: does the model's free-run reproduce the attractor geometry, the Lyapunov spectrum, the power spectrum, the dimension? A model can be a perfect reconstruction while never agreeing with the data pointwise after a short window.</p>
+<h4>How to use the app as a lab</h4>
+<p>1. Pick a system in &sect;I and integrate &mdash; that is ground truth. 2. Generate a noisy series from it in &sect;III (or upload your own). 3. Train the AL-RNN in &sect;IV; the blue orbit is its free-run. 4. In &sect;V, compute each quantity twice &mdash; once from the closed-form ODE, once from the trained model &mdash; and compare. The cross-checks panel does some of that comparison for you. The whole game of DSR is making row two match row one while only ever touching the data.</p>
+`],
+
+system: ["Closed-form systems &amp; integration", String.raw`
+<p>Each preset is an ODE \(\dot{x}=f(x;\theta)\) with editable parameters \(\theta\). The integrator is fixed-step <b>Runge&ndash;Kutta&nbsp;4</b>: per step it evaluates \(f\) four times and combines them so the local error is \(O(\mathrm{d}t^5)\), global \(O(\mathrm{d}t^4)\).</p>
+<h4>dt and steps</h4>
+<p>\(\mathrm{d}t\) must resolve the fastest timescale: too large and the numerics invent dynamics (RK4 on Lorenz goes visibly wrong before it blows up); too small and you waste your step budget without covering the attractor. Total simulated time is \(\mathrm{d}t \times\) steps &mdash; for statistics like Lyapunov exponents you want many multiples of the slowest timescale.</p>
+<h4>Random start &amp; transients</h4>
+<p>"Random start" jitters the initial condition. Either way, a per-system <b>transient</b> is integrated and discarded before recording, so the displayed orbit already lives on (or very near) the attractor. That is deliberate: every quantity in &sect;V is an <i>invariant</i> statistic &mdash; a property of the attractor, not of the approach to it &mdash; and transients would contaminate the estimates (a Lyapunov average polluted by off-attractor segments converges slowly and to the wrong place).</p>
+<h4>In the code</h4>
+<p>Hand-written \(f\) and analytic Jacobians \(\partial f/\partial x\) per system (the Jacobians feed Lyapunov and fixed-point routines); Lorenz-96 takes the dimension \(N\) as a parameter, which is how you get a 6-, 12-, 40-dimensional series to play with projections on.</p>
+`],
+
+view: ["Seeing high-dimensional orbits", String.raw`
+<p>The viewport shows \(\mathbb{R}^3\); state spaces rarely cooperate.</p>
+<h4>d &gt; 3: projection</h4>
+<p><b>PCA</b> projects onto the top-3 eigenvectors of the data covariance &mdash; the 3-plane capturing maximal variance (computed here by power iteration with deflation). Variance is not dynamics: PCA can hide exactly the directions where the interesting stretching happens. The <b>axes</b> mode just picks three coordinates; for Lorenz-96, neighbouring coordinates look alike, distant ones decorrelate &mdash; try both.</p>
+<h4>d &lt; 3: delay embedding</h4>
+<p>A scalar or planar series is lifted to \([\,x(t),\, x(t{+}\tau),\, x(t{+}2\tau)\,]\). <b>Takens' theorem</b> is the licence: for a generic observable of a system on a \(D\)-dimensional attractor, a delay window of dimension \(> 2D\) is an embedding &mdash; the reconstructed set is diffeomorphic to the true attractor. Here it is used only for display.</p>
+<h4>One honest warning</h4>
+<p>Trajectories of an ODE never cross (uniqueness of solutions). Any crossings you see are artifacts of projecting \(d\) dimensions into 3. The Lorenz wings "intersecting" is your projection, not the flow.</p>
+`],
+
+data: ["Bringing your own series", String.raw`
+<p>CSV/TSV, rows = time samples, numeric columns = state variables, optional header. Uniform sampling rate is assumed everywhere downstream.</p>
+<h4>What makes a series reconstructable</h4>
+<p>Three things. <b>Sampling:</b> several samples per characteristic period &mdash; alias the fast dynamics and no model can recover them. <b>Length:</b> the orbit should cover the attractor several times over; one wing of Lorenz teaches a model half the story. <b>Noise:</b> moderate measurement noise is survivable (teacher forcing tolerates it); process noise that changes the dynamics is a different and harder problem.</p>
+<h4>Standardization</h4>
+<p>Before training, each column is z-scored: \(\tilde{x}_j = (x_j - \mu_j)/\sigma_j\). This is conditioning, not cosmetics &mdash; one learning rate has to serve all weights, and wildly different coordinate scales make the loss landscape needlessly anisotropic. Everything shown to you (orbits, fixed points) is mapped back to raw units.</p>
+<h4>The examples</h4>
+<p>Generated client-side from the closed-form systems plus Gaussian measurement noise, so you always know the ground truth you are trying to recover &mdash; the honest way to test a reconstruction method.</p>
+`],
+
+alrnn: ["The AL-RNN, and how it trains", String.raw`
+<p>The model (Brenner et&nbsp;al., arXiv:2506.07919) is a latent map on \(z \in \mathbb{R}^M\):</p>
+$$z_{t+1} = A z_t + W\, \Phi_P(z_t) + h,$$
+<p>where \(A\) is diagonal, and \(\Phi_P\) applies ReLU to only the <b>last \(P\) of \(M\)</b> units, leaving \(M{-}P\) purely linear. The observation is read off trivially: \(\hat{x}_t = z_{t,1:N}\) (identity readout on the first \(N\) latents).</p>
+<h4>Why "almost linear" is a feature</h4>
+<p>Each ReLU is on or off, so \(\mathbb{R}^M\) is carved into at most \(2^P\) regions, and in each region the map is exactly affine: \(z_{t+1} = (A + W D_\Omega) z_t + h\) with \(D_\Omega\) a fixed 0/1 mask. Piecewise-linear means piecewise-<i>solvable</i>: fixed points, Jacobians, and stability come out exactly, no autodiff, no approximation. Small \(P\) keeps the model maximally interpretable; the paper's point is that surprisingly few nonlinear units suffice for chaotic attractors.</p>
+<h4>Sparse teacher forcing</h4>
+<p>Training a chaotic model by free-running and comparing to data fails: gradients through \(T\) steps scale like \(e^{\lambda_1 T}\) &mdash; they explode <i>because the system is chaotic</i>, not because the optimizer is bad. Sparse teacher forcing resets the first \(N\) latent coordinates to the data every \(\tau\) steps. Between resets the model must run on its own dynamics; \(\tau\) is the knob trading gradient sanity against autonomy, and its natural scale is the Lyapunov time. Too small: the model learns to lean on the resets. Too large: gradients explode.</p>
+<h4>In the code</h4>
+<p>Full BPTT through each window, Adam, gradient clipping, CPU typed arrays. The teacher-forced MSE you watch is <b>not</b> the success criterion &mdash; a model can score well there and free-run onto a boring fixed point. Judge the blue orbit and the invariants in &sect;V. <b>Free-run</b> re-rolls from a new random window each click, so you can check the model lands on the same attractor from different starts.</p>
+`],
+
+lyap: ["Lyapunov spectrum", String.raw`
+<p>Take an infinitesimal perturbation \(\delta_0\) and let the dynamics carry it: \(\dot{\delta} = J(x(t))\,\delta\). Lyapunov exponents are the long-run exponential rates</p>
+$$\lambda_i = \lim_{t \to \infty} \frac{1}{t} \log \frac{\|\delta_i(t)\|}{\|\delta_i(0)\|}$$
+<p>for a full set of independent directions. \(\lambda_1 > 0\) is the operational definition of chaos; for a flow one exponent is always \(0\) (the direction along the flow); \(\sum_i \lambda_i\) is the average volume contraction &mdash; negative for dissipative systems.</p>
+<h4>How it's computed here</h4>
+<p><b>ODE:</b> Benettin's method &mdash; integrate the variational system \(\dot{Y} = J(x)Y\) alongside the orbit and re-orthonormalize \(Y\) by QR every few steps; the running averages of \(\log\) of the diagonal of \(R\) converge to the spectrum. <b>AL-RNN:</b> same idea, but the Jacobian per step is the <i>exact</i> region matrix \(A + W D_\Omega\) &mdash; products of these along the free-run latent orbit, QR-reorthonormalized. Map exponents are per step; divide by the data \(\Delta t\) to compare with the ODE.</p>
+<h4>Kaplan&ndash;Yorke dimension</h4>
+$$D_{KY} = j + \frac{\sum_{i=1}^{j} \lambda_i}{|\lambda_{j+1}|}, \qquad j = \max\Big\{k : \textstyle\sum_{i=1}^{k} \lambda_i \ge 0\Big\}$$
+<p>&mdash; the dimension at which expansion and contraction balance. Conjecturally equal to the attractor's fractal dimension, so compare it against the measured \(D_2\): two routes to the same number, one through tangent dynamics, one through point-set geometry.</p>
+<h4>Why not from raw data?</h4>
+<p>For the full spectrum, exponents are properties of the derivative of the dynamics &mdash; you either know \(f\) or you reconstruct it. For \(\lambda_1\) alone there is a derivative-free route, and the data branch of this button now runs it: the <b>Rosenstein method</b>. For each point, find its nearest neighbour excluding temporal neighbours (close in time means close for boring reasons), then track the average log-distance of such pairs \(k\) steps later. While separations are small they grow like \(e^{\lambda_1 k \Delta t}\), so the early slope of the mean log-divergence curve is \(\lambda_1\) &mdash; the shaded band in the plot marks the fitted segment. Honest but rough: one exponent, no spectrum, no \(D_{KY}\), and the fit window matters. Cross-check against the variational value; the cross-checks panel does it for you.</p>
+`],
+
+fp: ["Fixed points &amp; their eigenstructure", String.raw`
+<p>Fixed points solve \(f(x^\ast)=0\) (flow) or \(F(z^\ast)=z^\ast\) (map). They are the skeleton of the phase portrait: the linearization \(J = \partial f/\partial x|_{x^\ast}\) classifies each one &mdash; for flows by the signs of \(\mathrm{Re}\,\lambda\), for maps by \(|\lambda|\) against \(1\). All stable: node/focus. All unstable: repeller. Mixed: <b>saddle</b> &mdash; and saddles are what organize chaos. Lorenz's two off-center fixed points are saddle-foci; trajectories spiral out along their unstable planes, get thrown to the other wing, repeat.</p>
+<h4>In the viewport</h4>
+<p>Markers: moss = stable, clay = unstable, ochre = saddle. The <b>whiskers</b> are the real eigen-directions of \(J\): clay whiskers locally expanding, moss contracting. A saddle's clay whisker points along its unstable manifold &mdash; watch how the nearby flow leaves along exactly that line. Complex eigen-pairs mean local spiralling in a plane; those are not drawn as lines because no single direction is invariant.</p>
+<h4>How they're found</h4>
+<p><b>ODE:</b> Newton's method from many random seeds in the data's bounding box, deduplicated. Standard, and honest about its limits: it finds what the seeds find. <b>AL-RNN:</b> here the piecewise-linear structure pays off. In each linear region \(\Omega\) the fixed-point equation is affine and solved <i>exactly</i>:</p>
+$$z^\ast = (I - A - W D_\Omega)^{-1} h,$$
+<p>kept iff \(z^\ast\) actually lies in its own region (consistency). Enumeration covers the regions visited by the free run &mdash; out of \(2^P\) possible, so unvisited regions stay invisible.</p>
+`],
+
+dmd: ["Koopman &amp; DMD", String.raw`
+<p>The <b>Koopman operator</b> is a beautiful trade: instead of the nonlinear state map \(x \mapsto F(x)\), consider how <i>functions of the state</i> evolve, \((\mathcal{K}g)(x) = g(F(x))\). \(\mathcal{K}\) is linear &mdash; always &mdash; at the price of being infinite-dimensional. Its eigenvalues encode frequencies and decay rates of the dynamics; its eigenfunctions are the coordinates in which the system <i>is</i> linear.</p>
+<h4>DMD is the finite shadow</h4>
+<p>Dynamic mode decomposition fits the best linear one-step map on your chosen observables &mdash; here, the \(d\) state coordinates themselves:</p>
+$$A = \arg\min_A \sum_t \|x_{t+1} - A x_t\|^2,$$
+<p>(ridge-regularized least squares in the code, then a mathjs eigendecomposition). The plot puts the eigenvalues against the unit circle: \(|\lambda|=1\) sustained oscillation, inside decay, outside growth; the eigen-phase \(\arg\lambda\) is a frequency &mdash; compare it to the power-spectrum peak, they should agree for a clean oscillation.</p>
+<h4>The caveat that matters</h4>
+<p>With only \(d\) linear observables you get the best linear caricature, not the Koopman spectrum. For a limit cycle that caricature is genuinely informative. For a strange attractor it cannot be: the Koopman spectrum of mixing dynamics is partly continuous, and no \(d \times d\) matrix represents that. The upgrade path is richer observables &mdash; and for uploaded data this app takes one rung automatically: <b>Hankel-DMD</b>, stacking \(q\) consecutive samples into one observable \([x_t, x_{t+1}, \dots, x_{t+q-1}]\), so the fit sees \(dq\) delay coordinates instead of \(d\). The same Takens logic that licenses delay embedding licenses this: delays carry information about unobserved directions, and the recovered eigenvalues approximate more of the Koopman spectrum. Nonlinear dictionaries (EDMD) are the next rung.</p>
+`],
+
+d2: ["Correlation dimension", String.raw`
+<p>Strange attractors are fractal, and \(D_2\) measures that from points alone. Define the <b>correlation sum</b> &mdash; the fraction of pairs closer than \(r\):</p>
+$$C(r) = \frac{2}{N(N-1)} \sum_{i<j} \mathbf{1}\{\|x_i - x_j\| < r\}.$$
+<p>On a \(D_2\)-dimensional set, \(C(r) \sim r^{D_2}\) for small \(r\), so \(D_2\) is the slope of \(\log C\) against \(\log r\) in the <b>scaling region</b> &mdash; the shaded band in the plot, fitted automatically over the middle decades (Grassberger&ndash;Procaccia, on 1500 subsampled points).</p>
+<h4>Reading the plot</h4>
+<p>Three regimes: small \(r\) flattened by noise (the noise ball is \(d\)-dimensional, not fractal), a hopefully-straight middle, and large \(r\) saturating because the attractor is bounded. The middle slope is the number; if there is no straight middle, there is no trustworthy \(D_2\).</p>
+<h4>Caveats</h4>
+<p>Finite, noisy, temporally correlated data biases \(D_2\) low &mdash; Lorenz comes out near 1.94 here against a true \(\approx 2.05\). Cross-check against \(D_{KY}\) from the Lyapunov spectrum: the Kaplan&ndash;Yorke conjecture says they should roughly agree, and the comparison appears in the cross-checks panel once you have computed both.</p>
+`],
+
+psd: ["Power spectrum", String.raw`
+<p>The squared magnitude of the Fourier transform of the first coordinate (Hann-windowed FFT in the code), on log&ndash;log axes.</p>
+<h4>How to read it</h4>
+<p>Sharp lines: periodicity &mdash; one line plus harmonics is a limit cycle, two incommensurate lines a torus. A <b>broadband</b> continuum: chaos or noise &mdash; and the spectrum alone cannot tell you which. That is not a small caveat; it is why the Lyapunov spectrum exists as a concept. Pair them: \(\lambda_1 > 0\) plus broadband is chaos; \(\lambda_1 \le 0\) plus broadband is noise riding on regular dynamics.</p>
+<p>The Hann window is there to stop spectral leakage: a finite record is implicitly multiplied by a box, whose transform smears every line into sidelobes. Tapering the edges trades a slightly wider main lobe for far cleaner skirts.</p>
+`],
+
+chaos: ["Sensitive dependence, live", String.raw`
+<p>The defining property of chaos: nearby states separate exponentially,</p>
+$$\|\delta(t)\| \approx \|\delta(0)\|\, e^{\lambda_1 t},$$
+<p>until the separation saturates at the attractor's diameter &mdash; exponential growth is local; the attractor is bounded, so stretch must be followed by fold.</p>
+<h4>What the demo does</h4>
+<p>It spawns ~40 copies of one state, jittered by \(\varepsilon \approx 10^{-4}\), and evolves all of them live &mdash; under the closed-form ODE, or under the trained AL-RNN map (which is the point of having reconstructed one: a recorded series cannot be perturbed and re-run; a model can). Watch the choreography: ball &rarr; ellipsoid (the Jacobian's leading singular direction wins) &rarr; filament along the local unstable direction &rarr; smeared over the whole attractor. That final smear is <b>mixing</b> &mdash; the cloud forgets where it started, which is precisely why prediction fails while statistics survive.</p>
+<h4>The readout</h4>
+<p>RMS spread of the cloud, its growth factor over \(\varepsilon\), and &mdash; if you have computed the Lyapunov spectrum &mdash; the predicted factor \(e^{\lambda_1 t}\). Early on, measured and predicted should track; near saturation the prediction sails on while the measurement flattens. The gap between the two curves is the difference between tangent-space linearization and the actual bounded attractor.</p>
+`],
+
+dstsp: ["Scoring a reconstruction", String.raw`
+<p>How do you grade a model of a chaotic system? Not by trajectory error: past the Lyapunov time \(1/\lambda_1\), even the <i>true</i> system re-run with a rounding error disagrees with the data. The DSR literature scores agreement of invariants instead; this button computes the two standard ones between the data and the model's free run.</p>
+<h4>State-space divergence</h4>
+$$D_{\mathrm{stsp}} = \mathrm{KL}\big(p_{\mathrm{data}} \,\Vert\, p_{\mathrm{model}}\big)$$
+<p>where the \(p\)'s are occupancy distributions over a binned state space (a \(12^3\) grid here; above 3-D both series are first projected to the data's PCA-3 frame). It asks: does the free run spend its time <i>in the same places</i>? Zero means identical attractor geometry &mdash; and it is deliberately blind to time, so a model tracing the right set at the wrong speed still scores well.</p>
+<h4>Power-spectrum error</h4>
+<p>\(D_{\mathrm{PSE}}\) is the Hellinger distance between normalized power spectra, averaged over dimensions: does the free run have the right <i>timescales</i>? It is blind to geometry. The pairing is the point &mdash; each metric covers the other's blind spot, and a genuine reconstruction drives both toward zero. One low and one high is itself diagnostic: right shape at the wrong rhythm, or the reverse.</p>
+`],
+
+basin: ["Basins of attraction", String.raw`
+<p>When a system has several attractors, phase space is partitioned: each initial condition belongs to the <b>basin</b> of whichever attractor it settles on. The basin boundary is itself a dynamical object &mdash; typically the stable manifold of a saddle sitting between the attractors &mdash; and in nastier systems it is fractal, making long-term fate effectively unpredictable even when the attractors themselves are tame.</p>
+<h4>What the button does</h4>
+<p>For a 2-D autonomous system it integrates a 100&times;100 grid of initial conditions, clusters the endpoints, and colors each cell by destination; dots mark the attractors. Try the <b>double-well Duffing</b> preset: two stable wells at \(x = \pm 1\), a saddle at the origin between them, and the color boundary you see is exactly that saddle's stable manifold. Lower the damping \(\delta\) and the spirals commit later &mdash; the basins wind around each other correspondingly.</p>
+<h4>Why only 2-D, only closed-form</h4>
+<p>The grid costs \(m^d\) integrations &mdash; honest in 2-D, hopeless in 6-D. And it needs a vector field to integrate; for data the analogue would be free-running the trained model from gridded states, a sensible extension this app doesn't yet attempt.</p>
+`],
+
+analysis: ["What can be computed from what", String.raw`
+<p>Three sources, three epistemic situations:</p>
+<p><b>Closed-form ODE</b> &mdash; you have \(f\) and its Jacobian. Everything is available, and it is ground truth: Lyapunov via the variational equation, fixed points via Newton, plus all data-driven quantities on the integrated orbit.</p>
+<p><b>Trained AL-RNN</b> &mdash; you have a reconstructed map, and its piecewise-linear form makes Jacobians and fixed points <i>exact</i>. Everything is available again, but now every number is a claim about how well the reconstruction worked &mdash; compare against the first column.</p>
+<p><b>Raw series</b> &mdash; you have points, no derivatives. Only the data-driven quantities run: DMD (a least-squares fit), \(D_2\) (pair counting), the power spectrum (an FFT). Lyapunov exponents, fixed points and the perturbation cloud are greyed out not by policy but by mathematics: each needs a vector field to differentiate, solve, or evolve.</p>
+<h4>The DSR loop, concretely</h4>
+<p>Pick Lorenz, integrate, compute Lyapunov and \(D_{KY}\) (truth). Generate the noisy Lorenz example, train, free-run, compute the same quantities from the model. The cross-checks panel lines them up. When \(\lambda_1\) and \(D_{KY}\) match to within estimation error while the trajectories themselves diverge after a Lyapunov time &mdash; that divergence-with-agreement is not failure, it <i>is</i> dynamical systems reconstruction working as defined.</p>
+`],
+};
+
+/* drawer; KaTeX is loaded lazily on first open so the initial page load
+   carries zero extra dependencies (sandboxed previews tolerate dynamic
+   injection better than render-blocking head resources) */
+const infoPane=$("infoPane");
+let lastInfoKey=null;
+let katexState="none";   /* none | loading | ready | failed */
+function renderDrawerMath(){
+  if(window.renderMathInElement){
+    renderMathInElement($("infoBody"),{
+      delimiters:[{left:"$$",right:"$$",display:true},{left:"\\(",right:"\\)",display:false}],
+      throwOnError:false});
+  } else if(katexState==="failed"){
+    const n=document.createElement("p");
+    n.style.cssText="font-size:11.5px;font-style:italic;color:var(--ink-soft)";
+    n.textContent="(math renderer unavailable \u2014 formulas shown as raw LaTeX)";
+    $("infoBody").prepend(n);
+  }
+}
+function ensureKatex(){
+  if(window.renderMathInElement){ katexState="ready"; renderDrawerMath(); return; }
+  if(katexState==="loading"||katexState==="failed"){ if(katexState==="failed") renderDrawerMath(); return; }
+  katexState="loading";
+  const base="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/";
+  const css=document.createElement("link");
+  css.rel="stylesheet"; css.href=base+"katex.min.css";
+  document.head.appendChild(css);
+  const fail=()=>{ katexState="failed"; renderDrawerMath(); };
+  const s1=document.createElement("script");
+  s1.src=base+"katex.min.js";
+  s1.onload=()=>{
+    const s2=document.createElement("script");
+    s2.src=base+"contrib/auto-render.min.js";
+    s2.onload=()=>{ katexState="ready"; renderDrawerMath(); };
+    s2.onerror=fail;
+    document.head.appendChild(s2);
+  };
+  s1.onerror=fail;
+  document.head.appendChild(s1);
+}
+function openInfo(key){
+  const e=INFO[key]; if(!e) return;
+  if(infoPane.classList.contains("show") && lastInfoKey===key){ closeInfo(); return; }
+  lastInfoKey=key;
+  $("infoTitle").innerHTML=e[0];
+  $("infoBody").innerHTML=e[1];
+  infoPane.classList.add("show");
+  infoPane.setAttribute("aria-hidden","false");
+  ensureKatex();
+  if(katexState==="ready") renderDrawerMath();
+  $("infoBody").scrollTop=0;
+}
+function closeInfo(){ infoPane.classList.remove("show"); infoPane.setAttribute("aria-hidden","true"); }
+$("infoClose").addEventListener("click",closeInfo);
+addEventListener("keydown",e=>{ if(e.key==="Escape") closeInfo(); });
+renderer.domElement.addEventListener("pointerdown",closeInfo);
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-info]");
+  if(b){ e.preventDefault(); e.stopPropagation(); openInfo(b.dataset.info); }
+});
+
+/* mobile menu */
+const sideEl=document.getElementById("side");
+$("menuBtn").addEventListener("click",()=>{
+  const open=sideEl.classList.toggle("openm");
+  $("menuBtn").textContent=open?"✕":"☰";
+});
+renderer.domElement.addEventListener("pointerdown",()=>{
+  if(sideEl.classList.contains("openm")){ sideEl.classList.remove("openm"); $("menuBtn").textContent="☰"; }
+});
+
+/* smooth section toggling */
+document.querySelectorAll(".sec .sechead").forEach(h=>{
+  h.addEventListener("click",e=>{
+    if(e.target.closest(".ibtn")) return;
+    h.parentElement.classList.toggle("open");
+  });
+});
+
+/* =================== boot =================== */
+loadSysUI();
+resize();
+applyCamera();
+requestAnimationFrame(loop);
+runIntegration(false);
+</script>
+</body>
+</html>

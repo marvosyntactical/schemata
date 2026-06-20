@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Schemata</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<style>
+:root {
+  --ink:      #1c1812;
+  --ink-soft: #5c544a;
+  --paper:    #f4ede0;
+  --paper-2:  #ede4d3;
+  --paper-3:  #e4d9c5;
+  --line:     #cfc2a8;
+  --clay:     #b65d3a;
+  --clay-d:   #8c4428;
+  --ochre:    #b98e3e;
+  --moss:     #6f7355;
+  --blue:     #3e6e8e;
+  --night:    #0c1017;
+  --serif:    'Georgia','Times New Roman',serif;
+  --sans:     system-ui,-apple-system,sans-serif;
+  --mono:     'Menlo','Consolas',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;width:100%;overflow:hidden;background:var(--night);color:var(--ink);font-family:var(--serif);font-size:13px}
+
+/* ── Top hover trigger ───────────────────────────────────────────────── */
+#strip-trigger{position:fixed;top:0;left:0;right:360px;height:14px;z-index:60;cursor:default}
+
+/* ── Top strip ───────────────────────────────────────────────────────── */
+#strip{
+  position:fixed;top:0;left:0;right:360px;z-index:55;height:46px;
+  background:var(--paper);border-bottom:1px solid var(--line);
+  box-shadow:0 4px 24px rgba(0,0,0,.35);
+  transform:translateY(-100%);transition:transform .32s cubic-bezier(.22,.8,.3,1);
+  display:flex;align-items:center;padding:0 10px;gap:6px;overflow:hidden;
+}
+#strip.show{transform:none}
+#strip-logo{font-size:14px;color:var(--ink-soft);letter-spacing:.05em;flex:none;padding-right:10px;border-right:1px solid var(--line);margin-right:4px}
+#strip-pills{flex:1;min-width:0;display:flex;align-items:center;gap:4px;overflow-x:auto;padding-bottom:1px}
+#strip-pills::-webkit-scrollbar{height:2px}
+#strip-pills::-webkit-scrollbar-thumb{background:var(--line)}
+#strip-actions{flex:none;display:flex;align-items:center;gap:8px;padding-left:8px;border-left:1px solid var(--line)}
+.pill{flex:none;display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;letter-spacing:.04em;padding:4px 10px;border-radius:12px;border:1.5px solid var(--line);background:var(--paper-2);color:var(--ink-soft);cursor:pointer;transition:all .18s;white-space:nowrap;user-select:none}
+.pill:hover{background:var(--paper);color:var(--ink);border-color:var(--ink-soft)}
+.pill.trained{border-color:var(--moss);color:var(--moss)}
+.pill.active{border-color:var(--clay)!important;color:var(--clay)!important;background:var(--paper)!important;font-weight:700}
+.pill.future{opacity:.35;background:transparent}
+.pill-dot{width:7px;height:7px;border-radius:50%;flex:none}
+.pill-mode{font-size:8px;opacity:.7}
+
+/* ── Main ────────────────────────────────────────────────────────────── */
+#main{display:flex;height:100%;position:relative}
+
+/* ── Stage ───────────────────────────────────────────────────────────── */
+#stage{flex:1;min-width:0;position:relative;background:var(--night)}
+#c3d{display:block;width:100%;height:100%;touch-action:none}
+#vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 50%,transparent 60%,rgba(0,0,0,.55) 100%)}
+#hud{position:absolute;left:16px;bottom:14px;font-family:var(--mono);font-size:10px;color:rgba(139,151,163,.5);pointer-events:none;transition:bottom .32s cubic-bezier(.22,.8,.3,1);user-select:none}
+#train-indicator{position:absolute;top:10px;right:10px;font-family:var(--mono);font-size:11px;color:var(--clay);background:rgba(244,237,224,.9);border:1px solid var(--line);border-radius:3px;padding:4px 10px;display:none}
+
+/* ── Left panel ──────────────────────────────────────────────────────── */
+#left-panel{position:absolute;top:0;left:0;height:100%;width:410px;z-index:20;background:var(--paper);border-right:1px solid var(--line);box-shadow:10px 0 40px rgba(0,0,0,.4);transform:translateX(-100%);transition:transform .42s cubic-bezier(.22,.85,.3,1);display:flex;flex-direction:column}
+#left-panel.open{transform:none}
+#lp-head{flex:none;padding:12px 14px 8px;border-bottom:1px solid var(--line);background:var(--paper-2);display:flex;justify-content:space-between;align-items:center}
+#lp-title{font-size:14px;font-weight:400;color:var(--ink-soft);letter-spacing:.08em}
+#lp-close{font-size:14px;color:var(--ink-soft);cursor:pointer;background:none;border:none;padding:2px 6px;border-radius:3px;transition:background .15s}
+#lp-close:hover{background:var(--paper-3);color:var(--clay)}
+#interp-tabs{flex:none;display:flex;border-bottom:1px solid var(--line);background:var(--paper-2)}
+.itab{flex:1;padding:8px 4px;font-family:var(--mono);font-size:11px;background:none;border:none;border-bottom:2px solid transparent;color:var(--ink-soft);cursor:pointer;transition:all .18s}
+.itab:hover{color:var(--ink);background:var(--paper-3)}
+.itab.active{color:var(--clay);border-bottom-color:var(--clay);background:var(--paper)}
+#lp-body{flex:1;min-height:0;display:flex;flex-direction:column}
+#lp-interp{flex:1;min-height:0;display:flex;flex-direction:column}
+.lp-canvas{display:none;flex:1;min-height:0;width:100%}
+.lp-canvas.active{display:block}
+#region-pattern{flex:none;padding:8px 14px;border-top:1px solid var(--line);background:var(--paper-2);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rp-label{font-family:var(--mono);font-size:10px;color:var(--ink-soft);white-space:nowrap}
+#rp-bits{display:flex;gap:3px;align-items:center}
+.rp-bit{width:15px;height:15px;border-radius:3px;border:1px solid var(--line);background:var(--paper-3);transition:background .15s,border-color .15s;cursor:default}
+.rp-bit.on{background:var(--clay);border-color:var(--clay-d)}
+#rp-code{font-family:var(--mono);font-size:9px;color:var(--ink-soft)}
+#lp-sigs{flex:1;min-height:0;overflow-y:auto;padding:14px 16px 20px;display:none}
+#lp-sigs::-webkit-scrollbar{width:5px}
+#lp-sigs::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.sig-section{margin-bottom:22px}
+.sig-section h4{font-size:13px;color:var(--clay);margin-bottom:6px;letter-spacing:.05em}
+.sig-section p{font-size:12px;color:var(--ink-soft);line-height:1.65;margin-bottom:8px}
+.sig-section .katex-display{margin:8px 0;overflow-x:auto}
+.sig-sep{border:none;border-top:1px solid var(--line);margin:18px 0}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────── */
+#side{flex:none;width:360px;background:linear-gradient(180deg,var(--paper) 0%,var(--paper-2) 100%);border-left:1px solid var(--line);overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column}
+#side::-webkit-scrollbar{width:5px}
+#side::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.brand{padding:18px 18px 12px;border-bottom:1px solid var(--line)}
+.brand h2{font-size:20px;font-weight:400;color:var(--ink);letter-spacing:.08em}
+.brand h2 span{color:var(--clay)}
+.brand p{font-size:11px;color:var(--ink-soft);margin-top:2px;letter-spacing:.04em}
+.sec{border-bottom:1px solid var(--line)}
+.sechead{display:flex;align-items:center;gap:7px;padding:12px 16px;cursor:pointer;user-select:none;transition:background .15s}
+.sechead:hover{background:var(--paper-2)}
+.sec-no{font-family:var(--mono);font-size:9px;color:var(--line);letter-spacing:.12em;padding:3px 5px;border:1px solid var(--line);border-radius:3px;flex:none}
+.sechead h3{flex:1;font-size:13px;font-weight:400;color:var(--ink);letter-spacing:.06em}
+.sectick{font-family:var(--mono);font-size:12px;color:var(--line);transition:transform .25s}
+.sec.open .sectick{transform:rotate(90deg)}
+.secbody{max-height:0;overflow:hidden;transition:max-height .35s cubic-bezier(.22,.85,.3,1)}
+.sec.open .secbody{max-height:900px}
+.secinner{padding:6px 14px 14px}
+.row{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.row label{font-family:var(--mono);font-size:10px;color:var(--ink-soft);flex:none;width:80px}
+.row select,.row input[type=number]{flex:1;min-width:0;font-family:var(--mono);font-size:11px;color:var(--ink);background:var(--paper-2);border:1px solid var(--line);border-radius:3px;padding:5px 7px;outline:none;transition:border-color .15s}
+.row select:focus,.row input:focus{border-color:var(--clay)}
+.row input[type=text]{flex:1;min-width:0;font-family:var(--mono);font-size:10px;color:var(--ink);background:var(--paper-2);border:1px solid var(--line);border-radius:3px;padding:5px 7px;outline:none}
+.check-row{display:flex;align-items:center;gap:6px;margin-bottom:7px}
+.check-row input[type=checkbox]{accent-color:var(--clay);cursor:pointer}
+.check-row label{font-family:var(--mono);font-size:10px;color:var(--ink-soft);cursor:pointer}
+.btnrow{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+button.primary{font-family:var(--mono);font-size:11px;padding:7px 14px;background:var(--clay);color:#fff;border:none;border-radius:3px;cursor:pointer;transition:background .18s;white-space:nowrap}
+button.primary:hover{background:var(--clay-d)}
+button.primary:disabled{opacity:.45;cursor:default}
+button.ghost{font-family:var(--mono);font-size:11px;padding:6px 12px;background:var(--paper-2);color:var(--ink-soft);border:1px solid var(--line);border-radius:3px;cursor:pointer;transition:all .18s;white-space:nowrap}
+button.ghost:hover{background:var(--paper-3);color:var(--ink);border-color:var(--ink-soft)}
+button.ghost:disabled{opacity:.4;cursor:default}
+button.blue{font-family:var(--mono);font-size:11px;padding:6px 12px;background:var(--blue);color:#fff;border:none;border-radius:3px;cursor:pointer;transition:background .18s}
+button.blue:hover{background:#2d5570}
+.note{font-family:var(--mono);font-size:10px;color:var(--ink-soft);line-height:1.6;margin-bottom:7px}
+#lossWrap{margin-top:10px}
+#lossPlot{width:100%;height:90px;border-radius:3px;display:block;border:1px solid var(--line)}
+#snapGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+.snap-card{padding:8px 8px 7px;background:var(--paper-2);border:1px solid var(--line);border-radius:3px;cursor:pointer;transition:all .18s;display:flex;flex-direction:column;gap:3px}
+.snap-card:hover{border-color:var(--clay);background:var(--paper)}
+.snap-card.used{border-color:var(--moss)}
+.snap-lbl{font-family:var(--mono);font-size:9px;color:var(--clay);font-weight:700}
+.snap-name{font-family:var(--mono);font-size:9px;color:var(--ink)}
+.snap-mse{font-family:var(--mono);font-size:8px;color:var(--ink-soft)}
+.snap-empty{font-family:var(--mono);font-size:9px;color:var(--line)}
+.task-list{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.task-item{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:10px;color:var(--ink-soft);padding:5px 8px;border-radius:3px;border:1px solid transparent;transition:all .18s}
+.task-item.trained{color:var(--moss);border-color:var(--moss);background:rgba(111,115,85,.08)}
+.task-item.current{color:var(--clay);border-color:var(--clay);background:rgba(182,93,58,.08)}
+.task-dot{width:8px;height:8px;border-radius:50%;flex:none}
+.chip-row{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:24px}
+.ctask-chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;padding:3px 8px 3px 10px;background:var(--paper-2);border:1px solid var(--line);border-radius:12px;color:var(--ink-soft)}
+.ctask-chip .chip-x{cursor:pointer;color:var(--ink-soft);font-size:11px;transition:color .15s;padding:0 2px}
+.ctask-chip .chip-x:hover{color:var(--clay)}
+.ctask-chip-dot{width:6px;height:6px;border-radius:50%;flex:none}
+.param-label-row{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--ink-soft);margin-bottom:6px}
+.param-label-row input,.param-label-row select{font-family:var(--mono);font-size:11px;color:var(--ink);background:var(--paper-2);border:1px solid var(--line);border-radius:3px;padding:5px 7px;outline:none;transition:border-color .15s}
+.param-label-row input:focus,.param-label-row select:focus{border-color:var(--clay)}
+.param-label-row input[type=number]{width:70px}
+
+/* ── Scrubber ────────────────────────────────────────────────────────── */
+#scrub-trigger{position:fixed;bottom:0;left:0;right:360px;height:14px;z-index:60;cursor:default}
+#scrubber{position:fixed;bottom:0;left:0;right:360px;z-index:55;height:56px;background:var(--paper);border-top:1px solid var(--line);box-shadow:0 -4px 24px rgba(0,0,0,.3);transform:translateY(100%);transition:transform .32s cubic-bezier(.22,.8,.3,1);display:flex;align-items:center;padding:0 14px;gap:8px}
+#scrubber.show{transform:none}
+#scrubber.inactive{opacity:.4}
+#scrubber button{flex:none;font-family:var(--mono);font-size:13px;padding:5px 9px;border:1px solid var(--line);border-radius:3px;background:var(--paper-2);color:var(--ink);cursor:pointer;transition:all .18s}
+#scrubber button:hover{background:var(--paper-3);border-color:var(--ink-soft)}
+#scrub-bar{flex:1;min-width:0;accent-color:var(--clay);cursor:pointer;height:4px}
+#scrub-info{flex:none;font-family:var(--mono);font-size:10px;color:var(--ink-soft);white-space:nowrap;min-width:80px;text-align:right}
+#scrub-region{flex:none;display:flex;align-items:center;gap:2px}
+.srb-bit{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--paper-3);border:1px solid var(--line);transition:background .12s,border-color .12s}
+.srb-bit.on{background:var(--clay);border-color:var(--clay-d)}
+
+/* ── Status ──────────────────────────────────────────────────────────── */
+#status{position:fixed;bottom:8px;right:368px;z-index:70;font-family:var(--mono);font-size:10px;color:rgba(180,165,145,.8);pointer-events:none;max-width:320px;text-align:right;transition:opacity .5s}
+</style>
+</head>
+<body>
+
+<div id="strip-trigger"></div>
+<div id="strip">
+  <span id="strip-logo">schemata</span>
+  <div id="strip-pills"></div>
+  <div id="strip-actions">
+    <button class="ghost" id="nextBtn" disabled style="padding:5px 10px;font-size:11px">▶ Next</button>
+    <div id="connBadge" style="width:8px;height:8px;border-radius:50%;background:var(--clay);flex:none"></div>
+  </div>
+</div>
+
+<div id="left-panel">
+  <div id="lp-head">
+    <h3 id="lp-title">Interpretability</h3>
+    <button id="lp-close">✕</button>
+  </div>
+  <div id="interp-tabs">
+    <button class="itab active" data-tab="phi">φ</button>
+    <button class="itab" data-tab="w">W</button>
+    <button class="itab" data-tab="mse">MSE</button>
+    <button class="itab" data-tab="pca">PCA</button>
+  </div>
+  <div id="lp-body">
+    <div id="lp-interp">
+      <canvas id="c-phi" class="lp-canvas active"></canvas>
+      <canvas id="c-w"   class="lp-canvas"></canvas>
+      <canvas id="c-mse" class="lp-canvas"></canvas>
+      <canvas id="c-pca" class="lp-canvas"></canvas>
+      <div id="region-pattern">
+        <span class="rp-label">active gates :</span>
+        <div id="rp-bits"></div>
+        <span id="rp-code"></span>
+      </div>
+    </div>
+    <div id="lp-sigs"><div id="sig-body"></div></div>
+  </div>
+</div>
+
+<div id="main">
+  <div id="stage">
+    <canvas id="c3d"></canvas>
+    <div id="vignette"></div>
+    <div id="hud">drag orbit · shift-drag pan · scroll zoom</div>
+    <div id="train-indicator">training…</div>
+  </div>
+
+  <aside id="side">
+    <div class="brand">
+      <h2>Schemata<span>.</span></h2>
+      <p>PIAGETS continual learning</p>
+    </div>
+
+    <!-- I: Connection & Stream -->
+    <div class="sec open" id="sec-stream">
+      <div class="sechead" onclick="toggleSec('sec-stream')">
+        <span class="sec-no">I</span><h3>Stream &amp; Connection</h3><span class="sectick">›</span>
+      </div>
+      <div class="secbody"><div class="secinner">
+        <div class="row">
+          <label>server</label>
+          <input type="text" id="wsUrl" placeholder="auto" style="flex:1;font-family:var(--mono);font-size:10px;background:var(--paper-2);border:1px solid var(--line);border-radius:3px;padding:5px 7px;color:var(--ink);outline:none">
+        </div>
+        <div class="btnrow">
+          <button class="ghost" onclick="wsConnect()">Connect</button>
+          <span id="wsStatus" style="font-family:var(--mono);font-size:10px;color:var(--ink-soft)">—</span>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <label>preset</label>
+          <select id="presetSel">
+            <option value="standard_10">Standard 10</option>
+            <option value="lorenz_ramp">Lorenz ramp</option>
+            <option value="class_alternating">Class alternating</option>
+            <option value="pathological">Pathological</option>
+          </select>
+        </div>
+        <div class="btnrow">
+          <button class="primary" onclick="loadPreset()">Load preset</button>
+          <button class="ghost" onclick="send({op:'reset'})">Reset model</button>
+        </div>
+        <div id="taskList" class="task-list"></div>
+        <div id="lossWrap"><canvas id="lossPlot"></canvas></div>
+      </div></div>
+    </div>
+
+    <!-- II: Custom sequence -->
+    <div class="sec" id="sec-custom">
+      <div class="sechead" onclick="toggleSec('sec-custom')">
+        <span class="sec-no">II</span><h3>Custom Sequence</h3><span class="sectick">›</span>
+      </div>
+      <div class="secbody"><div class="secinner">
+        <div class="note">Build your own task sequence, then load it.</div>
+        <div id="custom-chips" class="chip-row"></div>
+        <div class="param-label-row">
+          <span style="flex:none;width:52px">system</span>
+          <select id="cust-sys" style="flex:1" onchange="custSysChange()">
+            <option value="lorenz">Lorenz</option>
+            <option value="torus">Torus</option>
+            <option value="van_der_pol">Van der Pol</option>
+          </select>
+        </div>
+        <div class="param-label-row">
+          <span id="cust-param-lbl" style="flex:none;width:52px">ρ =</span>
+          <input type="number" id="cust-param" value="28" step="1">
+          <span style="flex:none;margin-left:8px">ep</span>
+          <input type="number" id="cust-ep" value="150" step="10" style="width:60px">
+          <button class="ghost" onclick="custAdd()" style="padding:5px 10px;margin-left:6px">+</button>
+        </div>
+        <div class="btnrow">
+          <button class="primary" id="cust-load-btn" onclick="custLoad()" disabled>Load sequence</button>
+          <button class="ghost" onclick="custClear()">Clear</button>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- III: Model -->
+    <div class="sec open" id="sec-model">
+      <div class="sechead" onclick="toggleSec('sec-model')">
+        <span class="sec-no">III</span><h3>Model</h3><span class="sectick">›</span>
+      </div>
+      <div class="secbody"><div class="secinner">
+        <div class="row"><label>latent M</label><input type="number" id="hpM" value="16" min="4" max="64"></div>
+        <div class="row"><label>nonlin P</label><input type="number" id="hpP" value="6"  min="2" max="16"></div>
+        <div class="row"><label>rank r</label>  <input type="number" id="hpRank" value="6" min="1" max="32"></div>
+        <div class="row"><label>epochs</label>  <input type="number" id="hpEpochs" value="150" min="10" max="2000"></div>
+        <div class="row"><label>EWC λ</label>   <input type="number" id="hpLam" value="5"  min="0" max="100" step=".5"></div>
+        <div class="check-row"><input type="checkbox" id="chkCL"       checked><label for="chkCL">EWC consolidation</label></div>
+        <div class="check-row"><input type="checkbox" id="chkMerge"    checked><label for="chkMerge">B_merge (SLAO)</label></div>
+        <div class="check-row"><input type="checkbox" id="chkQR"       checked><label for="chkQR">QR-init W_A</label></div>
+        <div class="check-row"><input type="checkbox" id="chkAdaptive"        ><label for="chkAdaptive">Adaptive probe</label></div>
+        <div class="check-row"><input type="checkbox" id="chkRegion"   checked><label for="chkRegion">Region vertex colors</label></div>
+        <div class="check-row"><input type="checkbox" id="chkAutoRot"  checked><label for="chkAutoRot">Auto-rotate</label></div>
+        <div class="btnrow">
+          <button class="primary" onclick="applyModel()">Apply &amp; reinit</button>
+          <button class="ghost"   onclick="send({op:'get_weights'})">Refresh W</button>
+        </div>
+        <div id="epochProgress" style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--clay);display:none">
+          ep <span id="epCur">0</span>/<span id="epTot">0</span>
+          &nbsp;<progress id="epBar" max="100" value="0" style="vertical-align:middle;width:80px;accent-color:var(--clay)"></progress>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- IV: Interpretability -->
+    <div class="sec" id="sec-interp">
+      <div class="sechead" onclick="openInterp()">
+        <span class="sec-no">IV</span><h3>Interpretability</h3><span class="sectick">›</span>
+      </div>
+      <div class="secbody"><div class="secinner">
+        <div class="note">φ · W_B · MSE cross-task · PCA embedding</div>
+        <div class="btnrow">
+          <button class="ghost" onclick="send({op:'get_phi'})">Compute φ</button>
+          <button class="ghost" onclick="send({op:'get_fisher'})">Fisher</button>
+        </div>
+        <div class="btnrow">
+          <button class="ghost" onclick="send({op:'get_mse_matrix'})">MSE matrix</button>
+          <button class="blue"  onclick="send({op:'get_oracle_phis'})">Oracle φ</button>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- V: Signatures -->
+    <div class="sec" id="sec-sigs">
+      <div class="sechead" onclick="openSigs()">
+        <span class="sec-no">V</span><h3>Signatures</h3><span class="sectick">›</span>
+      </div>
+      <div class="secbody"><div class="secinner">
+        <div class="note">Math explanations for all signatures and losses.</div>
+        <button class="ghost" onclick="openSigs()">Open →</button>
+      </div></div>
+    </div>
+
+    <!-- VI: Snapshots -->
+    <div class="sec open" id="sec-snaps">
+      <div class="sechead" onclick="toggleSec('sec-snaps')">
+        <span class="sec-no">VI</span><h3>Snapshots</h3><span class="sectick">›</span>
+      </div>
+      <div class="secbody"><div class="secinner">
+        <div class="note">Click empty slot to save. Click saved slot to restore.</div>
+        <div id="snapGrid"></div>
+        <div class="btnrow" style="margin-top:8px">
+          <button class="ghost" onclick="saveSnap()">Save slot</button>
+          <button class="ghost" onclick="send({op:'freerun',steps:3000})">Free-run</button>
+        </div>
+      </div></div>
+    </div>
+
+  </aside>
+</div>
+
+<div id="scrub-trigger"></div>
+<div id="scrubber" class="inactive">
+  <button id="scrub-bk"   title="to start"    onclick="scrubSetFrame(0)">|◀</button>
+  <button id="scrub-prev" title="−10 frames"  onclick="scrubStep(-10)">◀</button>
+  <button id="scrub-play" title="play/pause"  onclick="scrubToggle()">▶</button>
+  <button id="scrub-next" title="+10 frames"  onclick="scrubStep(10)">▶</button>
+  <button id="scrub-fwd"  title="to end"      onclick="scrubToEnd()">▶|</button>
+  <input  type="range" id="scrub-bar" min="0" max="0" value="0" oninput="scrubBarInput(this.value)">
+  <span id="scrub-info">— / —</span>
+  <div id="scrub-region"></div>
+</div>
+
+<div id="status"></div>
+
+<script>
+'use strict';
+
+// ── State ────────────────────────────────────────────────────────────────────
+const S = {
+  ws:null, connected:false, reconnTimer:null,
+  stream:[], current:-1, trained:new Set(), customTasks:[],
+  phi:null, phiHistory:[], oraclePhi:null, pcaMean:null, pcaVecs:null,
+  FB:null, FA:null, WB:null, WA:null, Ah:null, h:null,
+  mseData:null, snapshots:{},
+  lossRecon:[], lossEWC:[],
+  taskEvents:[],       // {ep, mode, name, taskIdx}
+  lastProbeMode:null,
+  useRegionColors:true, autoRotate:true,
+  activeInterpTab:'phi', leftPanelView:null,
+  M:16, P:6, rank:6,
+  trajBuffer:null,     // {xyz:Float32Array, regions:Int32Array, n:int}
+  scrubFrame:0, scrubPlaying:false, scrubTimer:null,
+};
+
+// ── WebSocket ────────────────────────────────────────────────────────────────
+function wsUrl() {
+  const v = document.getElementById('wsUrl').value.trim();
+  return v || (location.protocol==='https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+}
+function wsConnect() {
+  if (S.ws) { try { S.ws.close(); } catch(_) {} }
+  clearTimeout(S.reconnTimer);
+  setWsStatus('connecting…');
+  try { S.ws = new WebSocket(wsUrl()); } catch(e) { setWsStatus('invalid URL'); return; }
+  S.ws.onopen = () => {
+    S.connected = true; setWsStatus('connected');
+    document.getElementById('connBadge').style.background = 'var(--moss)';
+    send({op:'ping'});
+    setTimeout(()=>send({op:'init',M:S.M,P:S.P,rank:S.rank,lam:5}), 200);
+  };
+  S.ws.onmessage = e => { try { handleMsg(JSON.parse(e.data)); } catch(_){} };
+  S.ws.onclose = () => {
+    S.connected=false; setWsStatus('disconnected');
+    document.getElementById('connBadge').style.background = 'var(--clay)';
+    S.reconnTimer = setTimeout(wsConnect, 4000);
+  };
+  S.ws.onerror = () => setWsStatus('error');
+}
+function send(obj) { if (S.ws && S.ws.readyState===1) S.ws.send(JSON.stringify(obj)); }
+function setWsStatus(msg) { document.getElementById('wsStatus').textContent = msg; }
+
+// ── Message router ───────────────────────────────────────────────────────────
+function handleMsg(m) {
+  switch(m.type) {
+    case 'pong': break;
+    case 'ready':          handleReady(m); break;
+    case 'stream_info':    handleStreamInfo(m); break;
+    case 'advance':        handleAdvance(m); break;
+    case 'progress':       handleProgress(m); break;
+    case 'probe':          handleProbe(m); break;
+    case 'task_done':      handleTaskDone(m); break;
+    case 'freerun':        handleFreerun(m); break;
+    case 'freerun_preview':handleFreerunPreview(m); break;
+    case 'data':           handleData(m); break;
+    case 'weights':        handleWeights(m); break;
+    case 'phi':            handlePhiMsg(m); break;
+    case 'fisher_done':    handleFisherDone(m); break;
+    case 'oracle_phis':    handleOraclePhis(m); break;
+    case 'mse_matrix':     handleMseMatrix(m); break;
+    case 'snapshot_saved': handleSnapshotSaved(m); break;
+    case 'cl_updated':     showStatus('CL settings updated'); break;
+    case 'reset_ok':       handleResetOk(m); break;
+    case 'status':         showStatus(m.msg); break;
+    case 'error':          showStatus('Error: ' + m.msg); break;
+  }
+}
+
+function handleReady(m) {
+  S.M=m.M; S.P=m.P; S.rank=m.rank; S.current=m.task_idx;
+  showStatus('Model ready — device: '+(m.device||'cpu'));
+  renderStrip(); updateNextBtn();
+}
+function handleStreamInfo(m) {
+  S.stream=m.tasks; S.trained.clear();
+  S.lossRecon=[]; S.lossEWC=[]; S.taskEvents=[];
+  S.current=0;
+  renderStrip(); renderTaskList(); updateNextBtn();
+  document.getElementById('nextBtn').disabled=false;
+  showStatus(`Stream: ${m.tasks.length} tasks (${m.preset})`);
+  drawLossPlot();
+}
+function handleAdvance(m) {
+  S.current=m.task_idx; renderStrip(); renderTaskList();
+}
+function handleProgress(m) {
+  S.lossRecon.push(m.recon); S.lossEWC.push(m.ewc);
+  const el=document.getElementById('epochProgress'); el.style.display='';
+  document.getElementById('epCur').textContent=m.ep;
+  document.getElementById('epTot').textContent=m.total;
+  document.getElementById('epBar').value=Math.round(m.ep/m.total*100);
+  drawLossPlot();
+  document.getElementById('train-indicator').style.display='';
+}
+function handleProbe(m) {
+  S.lastProbeMode=m.mode;
+  showStatus(`Probe: ${m.mode} (λ=${m.lam?.toFixed(1)}) — ${m.task}`);
+}
+function handleTaskDone(m) {
+  S.trained.add(m.t); S.current=m.t;
+  document.getElementById('epochProgress').style.display='none';
+  document.getElementById('train-indicator').style.display='none';
+  S.taskEvents.push({ep:S.lossRecon.length, mode:m.probe_mode||S.lastProbeMode||'none',
+                     name:m.name, taskIdx:m.t});
+  S.lastProbeMode=null;
+  if (m.phi) { S.phi=m.phi; S.phiHistory.push({t:m.t,phi:m.phi,name:m.name}); }
+  handleWeights(m);
+  handleFreerun(m);
+  renderStrip(); renderTaskList(); renderSnaps();
+  drawLossPlot(); redrawPanel();
+  showStatus(`Done: ${m.name}  MSE=${m.mse?.toFixed(4)}  regions=${m.n_regions}`);
+  updateNextBtn();
+}
+function handleFreerun(m) {
+  const n=m.regions.length;
+  const xyz=new Float32Array(m.xyz);
+  const regions=new Int32Array(m.regions);
+  S.trajBuffer={xyz,regions,n};
+  scrubActivate();
+  updateScrubMax(n); scrubSetFrame(n,false);
+  updateModelLine(xyz,regions,n);
+  hudSet(`regions: ${m.n_regions ?? new Set(m.regions).size}`);
+}
+function handleFreerunPreview(m) {
+  const n=m.regions.length;
+  const xyz=new Float32Array(m.xyz);
+  const regions=new Int32Array(m.regions);
+  S.trajBuffer={xyz,regions,n};
+  scrubActivate();
+  updateScrubMax(n); scrubSetFrame(0,false);
+  updateModelLine(xyz,regions,n);
+  if (!S.scrubPlaying) scrubPlay();
+}
+function handleData(m) {
+  updateDataLine(new Float32Array(m.xyz), m.color, m.task_idx);
+}
+function handleWeights(m) {
+  if (m.WB)   S.WB=m.WB;
+  if (m.WA)   S.WA=m.WA;
+  if (m.A)    S.Ah=m.A;
+  if (m.h)    S.h=m.h;
+  if (m.FB)   S.FB=m.FB;
+  if (m.FA)   S.FA=m.FA;
+  if (m.M)    { S.M=m.M; S.P=m.P; S.rank=m.rank; }
+  redrawPanel();
+}
+function handlePhiMsg(m) { S.phi=m.phi; redrawPanel(); }
+function handleFisherDone(m) { S.FB=m.FB; S.FA=m.FA; redrawPanel(); showStatus('Fisher done'); }
+function handleOraclePhis(m) {
+  S.oraclePhi=m.phis; S.pcaMean=m.pca_mean; S.pcaVecs=m.pca_vecs;
+  redrawPanel(); showStatus(`Oracle φ: ${m.phis.length} tasks`);
+}
+function handleMseMatrix(m) { S.mseData=m; redrawPanel(); showStatus('MSE matrix computed'); }
+function handleSnapshotSaved(m) {
+  S.snapshots[m.slot]={label:m.label,phi:m.phi,mse:m.mse};
+  renderSnaps(); showStatus(`Saved slot ${m.slot}: ${m.label}`);
+}
+function handleResetOk(m) {
+  S.current=m.task_idx; S.trained.clear();
+  S.lossRecon=[]; S.lossEWC=[]; S.taskEvents=[];
+  clearModelLine(); renderStrip(); renderTaskList(); drawLossPlot();
+  showStatus('Model reset');
+}
+
+// ── Three.js ──────────────────────────────────────────────────────────────────
+let renderer, scene, camera;
+let theta=0.35, phi3=1.1, r3=30;
+let isDrag=false, isPan=false, lastX=0, lastY=0, panX=0, panY=0;
+let dataLines={}, modelLine=null, posMarker=null;
+
+function initThree() {
+  const c=document.getElementById('c3d');
+  renderer=new THREE.WebGLRenderer({canvas:c,antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(c.offsetWidth,c.offsetHeight);
+  scene=new THREE.Scene();
+  camera=new THREE.PerspectiveCamera(45,c.offsetWidth/c.offsetHeight,0.01,5000);
+  updateCam3();
+
+  const mg=new THREE.SphereGeometry(0.18,8,8);
+  posMarker=new THREE.Mesh(mg,new THREE.MeshBasicMaterial({color:0xf4ede0}));
+  posMarker.visible=false; scene.add(posMarker);
+
+  [[1,0,0,'#b65d3a'],[0,1,0,'#6f7355'],[0,0,1,'#3e6e8e']].forEach(([x,y,z,col])=>{
+    const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0),new THREE.Vector3(x*8,y*8,z*8)]);
+    scene.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:parseInt(col.slice(1),16),opacity:.2,transparent:true})));
+  });
+
+  c.addEventListener('mousedown',onMD);
+  c.addEventListener('mousemove',onMM);
+  c.addEventListener('mouseup',()=>{isDrag=isPan=false});
+  c.addEventListener('mouseleave',()=>{isDrag=isPan=false});
+  c.addEventListener('wheel',onWheel,{passive:false});
+  c.addEventListener('contextmenu',e=>e.preventDefault());
+
+  new ResizeObserver(()=>{
+    const el=document.getElementById('stage');
+    renderer.setSize(el.offsetWidth,el.offsetHeight);
+    camera.aspect=el.offsetWidth/el.offsetHeight;
+    camera.updateProjectionMatrix();
+  }).observe(document.getElementById('stage'));
+
+  requestAnimationFrame(function loop(){
+    requestAnimationFrame(loop);
+    if (S.autoRotate&&!isDrag&&!isPan) { theta+=0.003; updateCam3(); }
+    renderer.render(scene,camera);
+  });
+}
+function updateCam3() {
+  const x=r3*Math.sin(phi3)*Math.sin(theta),y=r3*Math.cos(phi3),z=r3*Math.sin(phi3)*Math.cos(theta);
+  camera.position.set(x+panX,y+panY,z); camera.lookAt(panX,panY,0);
+}
+function onMD(e) {
+  if (e.button===0&&!e.shiftKey) {
+    isDrag=true; S.autoRotate=false;
+    document.getElementById('chkAutoRot').checked=false;
+  } else { isPan=true; }
+  lastX=e.clientX; lastY=e.clientY;
+}
+function onMM(e) {
+  if (isDrag) {
+    theta-=(e.clientX-lastX)*0.012;
+    phi3=Math.max(0.05,Math.min(Math.PI-0.05,phi3-(e.clientY-lastY)*0.012));
+    updateCam3();
+  } else if (isPan) {
+    const sc=r3*0.002;
+    panX-=(e.clientX-lastX)*sc; panY+=(e.clientY-lastY)*sc; updateCam3();
+  }
+  lastX=e.clientX; lastY=e.clientY;
+}
+function onWheel(e) {
+  e.preventDefault(); r3=Math.max(2,Math.min(500,r3*(1+e.deltaY*0.001))); updateCam3();
+}
+
+const RPAL=['#3e6e8e','#b65d3a','#6f7355','#b98e3e','#7b5ea7','#4a9e8e',
+            '#8e3e6e','#6e8e3e','#9e6e3e','#3e8e6e','#6e3e9e','#8e9e3e'];
+function rpalRGB(code) { return hexRGB(RPAL[code%RPAL.length]||'#888'); }
+function hexRGB(hex) {
+  hex=hex.replace('#','');
+  if(hex.length===3) hex=hex.split('').map(x=>x+x).join('');
+  const n=parseInt(hex,16);
+  return [(n>>16&255)/255,(n>>8&255)/255,(n&255)/255];
+}
+
+function makeLine(maxN) {
+  const pos=new Float32Array(maxN*3), col=new Float32Array(maxN*3);
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  g.setAttribute('color',   new THREE.BufferAttribute(col,3));
+  g.setDrawRange(0,0);
+  const mat=new THREE.LineBasicMaterial({vertexColors:true,opacity:.82,transparent:true});
+  const line=new THREE.Line(g,mat); scene.add(line); return line;
+}
+
+function fillLine(line, xyz, baseHex, regions, n) {
+  const pa=line.geometry.attributes.position.array;
+  const ca=line.geometry.attributes.color.array;
+  const [br,bg,bb]=hexRGB(baseHex);
+  for (let i=0;i<n;i++) {
+    pa[i*3]=xyz[i*3]; pa[i*3+1]=xyz[i*3+1]; pa[i*3+2]=xyz[i*3+2];
+    let r=br,g=bg,b=bb;
+    if (S.useRegionColors&&regions) { [r,g,b]=rpalRGB(regions[i]); }
+    const f=0.25+0.75*(i/Math.max(n-1,1));
+    ca[i*3]=r*f; ca[i*3+1]=g*f; ca[i*3+2]=b*f;
+  }
+  line.geometry.attributes.position.needsUpdate=true;
+  line.geometry.attributes.color.needsUpdate=true;
+  line.geometry.setDrawRange(0,n);
+}
+
+function updateDataLine(xyz,colorHex,taskIdx) {
+  const key='d'+taskIdx, n=xyz.length/3;
+  if (!dataLines[key]) dataLines[key]=makeLine(Math.max(n,6000));
+  fillLine(dataLines[key],xyz,colorHex,null,n);
+}
+function updateModelLine(xyz,regions,n) {
+  if (!modelLine) modelLine=makeLine(Math.max(n,8000));
+  fillLine(modelLine,xyz,'#f4ede0',regions,n);
+  modelLine.geometry.setDrawRange(0,n);
+}
+function clearModelLine() {
+  if (modelLine) { scene.remove(modelLine); modelLine=null; }
+  if (posMarker) posMarker.visible=false;
+}
+
+// ── Scrubber ──────────────────────────────────────────────────────────────────
+function scrubActivate() { document.getElementById('scrubber').classList.remove('inactive'); }
+function updateScrubMax(n) {
+  const b=document.getElementById('scrub-bar'); b.max=n; b.value=n;
+}
+function scrubSetFrame(f, updateLine=true) {
+  if (!S.trajBuffer) return;
+  f=Math.max(0,Math.min(S.trajBuffer.n,+f));
+  S.scrubFrame=f;
+  document.getElementById('scrub-bar').value=f;
+  document.getElementById('scrub-info').textContent=`${f} / ${S.trajBuffer.n}`;
+  if (f>0) {
+    const region=S.trajBuffer.regions[f-1]||0;
+    updateRegionDisplay(region);
+    if (posMarker) {
+      const i=f-1;
+      posMarker.position.set(S.trajBuffer.xyz[i*3],S.trajBuffer.xyz[i*3+1],S.trajBuffer.xyz[i*3+2]);
+      posMarker.visible=true;
+    }
+  } else {
+    if (posMarker) posMarker.visible=false;
+    updateRegionDisplay(0);
+  }
+  if (updateLine&&modelLine) modelLine.geometry.setDrawRange(0,f);
+  if (S.leftPanelView==='interp'&&S.activeInterpTab==='w') {
+    drawWeightsPanel(f>0 ? S.trajBuffer.regions[f-1] : undefined);
+  }
+}
+function scrubBarInput(v) { scrubPause(); scrubSetFrame(+v); }
+function scrubToggle() { S.scrubPlaying ? scrubPause() : scrubPlay(); }
+function scrubPlay() {
+  if (!S.trajBuffer) return;
+  if (S.scrubFrame>=S.trajBuffer.n) scrubSetFrame(0);
+  S.scrubPlaying=true;
+  document.getElementById('scrub-play').textContent='⏸';
+  function tick() {
+    if (!S.scrubPlaying||!S.trajBuffer) { scrubPause(); return; }
+    S.scrubFrame=Math.min(S.scrubFrame+6,S.trajBuffer.n);
+    scrubSetFrame(S.scrubFrame);
+    if (S.scrubFrame<S.trajBuffer.n) S.scrubTimer=requestAnimationFrame(tick);
+    else { S.scrubPlaying=false; document.getElementById('scrub-play').textContent='▶'; }
+  }
+  S.scrubTimer=requestAnimationFrame(tick);
+}
+function scrubPause() {
+  S.scrubPlaying=false; cancelAnimationFrame(S.scrubTimer);
+  document.getElementById('scrub-play').textContent='▶';
+}
+function scrubStep(d) { scrubPause(); scrubSetFrame(S.scrubFrame+d); }
+function scrubToEnd() { scrubPause(); if (S.trajBuffer) scrubSetFrame(S.trajBuffer.n); }
+
+function updateRegionDisplay(code) {
+  const P=S.P;
+  const rp=document.getElementById('rp-bits'); rp.innerHTML='';
+  for (let j=0;j<P;j++) {
+    const on=(code>>j)&1;
+    const s=document.createElement('span');
+    s.className='rp-bit'+(on?' on':'');
+    s.title=`unit ${j}: ${on?'active':'inactive'}`; rp.appendChild(s);
+  }
+  document.getElementById('rp-code').textContent=`region #${code}`;
+  const sr=document.getElementById('scrub-region'); sr.innerHTML='';
+  for (let j=0;j<P;j++) {
+    const on=(code>>j)&1;
+    const s=document.createElement('span'); s.className='srb-bit'+(on?' on':''); sr.appendChild(s);
+  }
+}
+
+// ── Canvas helpers ────────────────────────────────────────────────────────────
+function fitCanvas(id) {
+  const c=document.getElementById(id), dpr=Math.min(devicePixelRatio,2);
+  const w=c.offsetWidth*dpr, h=c.offsetHeight*dpr;
+  if (c.width!==w||c.height!==h) { c.width=w; c.height=h; } return c;
+}
+function divergeRGB(v) {
+  if (v<0) { const t=-v; return[Math.round(62+t*114),Math.round(110+t*55),Math.round(142-t*142)]; }
+  else     { const t=v;  return[Math.round(62+t*114),Math.round(110-t*65),Math.round(142-t*142)]; }
+}
+function redrawPanel() {
+  if (S.leftPanelView!=='interp') return;
+  switch(S.activeInterpTab) {
+    case 'phi': drawPhiPanel(); break;
+    case 'w':   drawWeightsPanel(); break;
+    case 'mse': drawMsePanel(); break;
+    case 'pca': drawPcaPanel(); break;
+  }
+}
+
+// ── φ panel ──────────────────────────────────────────────────────────────────
+function drawPhiPanel() {
+  const c=fitCanvas('c-phi'), ctx=c.getContext('2d');
+  const W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#f4ede0'; ctx.fillRect(0,0,W,H);
+  if (!S.phi) {
+    ctx.fillStyle='#c5b89f'; ctx.font='10px monospace';
+    ctx.fillText('no φ yet — use Interpretability panel', 14, 30); return;
+  }
+  const phi=S.phi, M=S.M, P=S.P, n=phi.length;
+  const padL=18,padR=12,padT=28,padB=28;
+  const bw=(W-padL-padR)/n;
+  const maxV=Math.max(...phi.map(Math.abs),0.01);
+  const groups=[
+    {start:0,end:M-P,col:'rgba(182,93,58,.08)',label:'eigenvals'},
+    {start:M-P,end:M-P+P,col:'rgba(111,115,85,.08)',label:'act μ'},
+    {start:M-P+P,end:M,col:'rgba(62,110,142,.08)',label:'act σ'},
+    {start:M,end:M+1,col:'rgba(185,142,62,.1)',label:'topo'},
+    {start:M+1,end:M+2,col:'rgba(123,94,167,.1)',label:'lyap'},
+  ];
+  groups.forEach(g=>{
+    ctx.fillStyle=g.col;
+    ctx.fillRect(padL+g.start*bw,padT,(g.end-g.start)*bw,H-padT-padB);
+    ctx.fillStyle='#9b8e7e'; ctx.font='8px monospace';
+    ctx.fillText(g.label, Math.max(padL,(padL+(g.start+g.end)/2*bw)-14), H-6);
+  });
+  const midY=padT+(H-padT-padB)/2, barH=(H-padT-padB)/2;
+  phi.forEach((v,i)=>{
+    const norm=v/maxV, x=padL+i*bw+1, bh=Math.abs(norm)*barH*0.9;
+    const y=norm>=0 ? midY-bh : midY;
+    ctx.fillStyle=norm>=0?'#b65d3a':'#3e6e8e'; ctx.fillRect(x,y,bw-2,bh);
+  });
+  ctx.strokeStyle='#d5cab4'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(padL,midY); ctx.lineTo(W-padR,midY); ctx.stroke();
+  if (S.phiHistory.length>0) {
+    S.phiHistory.forEach((h,hi)=>{
+      ctx.strokeStyle=`rgba(182,93,58,${0.1+0.15*(hi/S.phiHistory.length)})`;
+      ctx.lineWidth=0.8; ctx.beginPath();
+      h.phi.forEach((v,i)=>{ const x=padL+(i+0.5)*bw, y=midY-v/maxV*barH*0.9; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+      ctx.stroke();
+    });
+  }
+  ctx.fillStyle='#7d7060'; ctx.font='9px monospace';
+  ctx.fillText(`φ  dim=${n}  max=${maxV.toFixed(3)}`, padL, padT-6);
+}
+
+// ── W_B heatmap ──────────────────────────────────────────────────────────────
+function drawWeightsPanel(activeRegion) {
+  const c=fitCanvas('c-w'), ctx=c.getContext('2d');
+  const W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#f4ede0'; ctx.fillRect(0,0,W,H);
+  if (!S.WB) { ctx.fillStyle='#c5b89f'; ctx.font='10px monospace'; ctx.fillText('no weights yet',14,30); return; }
+  const M=S.M, r=S.rank, P=S.P;
+  const WB=S.WB, FB=S.FB;
+  const padL=28,padR=8,padT=22,padB=22;
+  const cw=(W-padL-padR)/r, ch=(H-padT-padB)/M;
+  const vmax=Math.max(...WB.map(Math.abs),0.01);
+  const activeBits=[];
+  if (activeRegion!==undefined) for(let j=0;j<P;j++) activeBits[j]=(activeRegion>>j)&1;
+  for (let i=0;i<M;i++) {
+    const isActive=activeBits[i]===1;
+    for (let j=0;j<r;j++) {
+      const idx=i*r+j, v=(WB[idx]||0)/vmax, fi=FB?Math.max(0,Math.min(1,FB[idx]||0)):0.5;
+      const [cr,cg,cb_]=divergeRGB(v);
+      ctx.fillStyle=`rgba(${cr},${cg},${cb_},${0.15+0.85*fi})`;
+      ctx.fillRect(padL+j*cw, padT+i*ch, cw-0.5, ch-0.5);
+    }
+    if (isActive) { ctx.strokeStyle='#b65d3a'; ctx.lineWidth=1.5; ctx.strokeRect(padL, padT+i*ch, W-padL-padR, ch-0.5); }
+    if (i%4===0||isActive) {
+      ctx.fillStyle=isActive?'#b65d3a':'#7d7060';
+      ctx.font=isActive?'bold 8px monospace':'8px monospace';
+      ctx.fillText(i, 2, padT+i*ch+ch*0.7);
+    }
+  }
+  ctx.fillStyle='#7d7060'; ctx.font='8px monospace';
+  for(let j=0;j<r;j+=2) ctx.fillText(j, padL+j*cw, H-5);
+  ctx.fillText('W_B  opacity=Fisher  border=active gate', padL, padT-6);
+}
+
+// ── MSE panel ────────────────────────────────────────────────────────────────
+function drawMsePanel() {
+  const c=fitCanvas('c-mse'), ctx=c.getContext('2d');
+  const W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#f4ede0'; ctx.fillRect(0,0,W,H);
+  if (!S.mseData) { ctx.fillStyle='#c5b89f'; ctx.font='10px monospace'; ctx.fillText('no MSE data yet',14,30); return; }
+  const {tasks,current}=S.mseData, n=tasks.length;
+  const pad=40, cw=(W-pad*2)/n;
+  const allMSE=current.map(x=>x.mse), maxMSE=Math.max(...allMSE,0.01);
+  const barMaxH=H-pad*2-40, midY=pad+barMaxH;
+  ctx.fillStyle='#7d7060'; ctx.font='9px monospace';
+  ctx.fillText('current model MSE per task', pad, pad-8);
+  current.forEach((item,i)=>{
+    const bh=(item.mse/maxMSE)*barMaxH, x=pad+i*cw+cw*0.1, bw2=cw*0.8;
+    const ratio=item.mse/maxMSE;
+    ctx.fillStyle=`rgb(${Math.round(111+ratio*71)},${Math.round(115-ratio*22)},${Math.round(85-ratio*47)})`;
+    ctx.fillRect(x, midY-bh, bw2, bh);
+    ctx.fillStyle='#7d7060'; ctx.font='8px monospace';
+    ctx.save(); ctx.translate(x+bw2/2,midY+3); ctx.rotate(-Math.PI/4);
+    ctx.fillText(tasks[i].slice(0,6),0,0); ctx.restore();
+    ctx.fillStyle='#5c544a'; ctx.font='8px monospace';
+    ctx.fillText(item.mse.toFixed(3), x, midY-bh-3);
+  });
+  ctx.strokeStyle='#d5cab4'; ctx.lineWidth=0.5;
+  ctx.beginPath(); ctx.moveTo(pad,midY); ctx.lineTo(W-pad,midY); ctx.stroke();
+}
+
+// ── PCA panel ────────────────────────────────────────────────────────────────
+function drawPcaPanel() {
+  const c=fitCanvas('c-pca'), ctx=c.getContext('2d');
+  const W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#f4ede0'; ctx.fillRect(0,0,W,H);
+  if (!S.oraclePhi) { ctx.fillStyle='#c5b89f'; ctx.font='10px monospace'; ctx.fillText('compute oracle φ first',14,30); return; }
+  const {pca_mean:mean, pca_vecs:vecs, phis}=[{pca_mean:S.pcaMean,pca_vecs:S.pcaVecs,phis:S.oraclePhi}][0];
+  if (!mean||!vecs) return;
+  const pad=32;
+  const pts=phis.map(item=>{
+    const diff=item.phi.map((v,i)=>v-mean[i]);
+    const p1=diff.reduce((s,v,i)=>s+v*vecs[0][i],0);
+    const p2=diff.reduce((s,v,i)=>s+v*vecs[1][i],0);
+    return {p1,p2,name:item.name,color:item.color||'#888'};
+  });
+  const xs=pts.map(p=>p.p1), ys=pts.map(p=>p.p2);
+  const xr=[Math.min(...xs),Math.max(...xs)], yr=[Math.min(...ys),Math.max(...ys)];
+  const xs_=Math.max(xr[1]-xr[0],0.01), ys_=Math.max(yr[1]-yr[0],0.01);
+  const toSx=v=>pad+(v-xr[0])/xs_*(W-2*pad), toSy=v=>H-pad-(v-yr[0])/ys_*(H-2*pad);
+  if (S.phi&&mean&&vecs) {
+    const diff=S.phi.map((v,i)=>v-mean[i]);
+    const p1=diff.reduce((s,v,i)=>s+v*vecs[0][i],0), p2=diff.reduce((s,v,i)=>s+v*vecs[1][i],0);
+    ctx.beginPath(); ctx.arc(toSx(p1),toSy(p2),9,0,Math.PI*2);
+    ctx.strokeStyle='#b65d3a'; ctx.lineWidth=2.5; ctx.stroke();
+  }
+  pts.forEach(p=>{
+    ctx.beginPath(); ctx.arc(toSx(p.p1),toSy(p.p2),5,0,Math.PI*2);
+    ctx.fillStyle=p.color; ctx.fill();
+    ctx.fillStyle='#5c544a'; ctx.font='8px monospace';
+    ctx.fillText(p.name.slice(0,6),toSx(p.p1)+7,toSy(p.p2)+3);
+  });
+  ctx.fillStyle='#7d7060'; ctx.font='9px monospace';
+  ctx.fillText('φ-PCA (circle = current model)', pad, 16);
+}
+
+// ── Loss plot ─────────────────────────────────────────────────────────────────
+function drawLossPlot() {
+  const c=document.getElementById('lossPlot'); if (!c) return;
+  const dpr=Math.min(devicePixelRatio,2);
+  const W=c.offsetWidth*dpr, H=c.offsetHeight*dpr;
+  c.width=W; c.height=H;
+  const ctx=c.getContext('2d');
+  const mainH=H*0.72, modeH=H*0.23;
+  const padL=6*dpr, padR=6*dpr, padT=14*dpr, padB=4*dpr;
+  ctx.fillStyle='#f4ede0'; ctx.fillRect(0,0,W,H);
+  const recon=S.lossRecon, ewc=S.lossEWC;
+  if (recon.length<2) {
+    ctx.fillStyle='#c5b89f'; ctx.font=`${9*dpr}px monospace`;
+    ctx.fillText('loss — train to see',padL,padT+9*dpr); return;
+  }
+  const n=recon.length, yMax=Math.max(...recon,...ewc.filter(v=>v>0),1e-6)*1.1;
+  const toX=i=>padL+(i/(n-1))*(W-padL-padR), toY=v=>padT+(1-v/yMax)*(mainH-padT-padB);
+  ctx.strokeStyle='#d5cab4'; ctx.lineWidth=0.5;
+  ctx.beginPath(); ctx.moveTo(padL,toY(0)); ctx.lineTo(W-padR,toY(0)); ctx.stroke();
+  S.taskEvents.forEach(ev=>{
+    if (ev.ep<=0||ev.ep>=n) return;
+    const x=toX(ev.ep);
+    const col=ev.mode==='assimilation'?'#6f7355':ev.mode==='accommodation'?'#b65d3a':'#8b97a3';
+    ctx.strokeStyle=col; ctx.lineWidth=1*dpr;
+    ctx.setLineDash([3*dpr,2*dpr]);
+    ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,mainH-padB); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle=col; ctx.font=`${6*dpr}px monospace`;
+    ctx.fillText(ev.name.slice(0,4),x+1*dpr,padT+7*dpr);
+  });
+  function drawLine(arr,col) {
+    ctx.beginPath(); ctx.strokeStyle=col; ctx.lineWidth=dpr;
+    arr.forEach((v,i)=>{ i===0?ctx.moveTo(toX(i),toY(v)):ctx.lineTo(toX(i),toY(v)); }); ctx.stroke();
+  }
+  drawLine(recon,'#b65d3a');
+  if (ewc.some(v=>v>0)) drawLine(ewc,'#3e6e8e');
+  ctx.font=`${7*dpr}px monospace`;
+  ctx.fillStyle='#b65d3a'; ctx.fillText('recon',padL,padT+8*dpr);
+  if (ewc.some(v=>v>0)) { ctx.fillStyle='#3e6e8e'; ctx.fillText('ewc',padL+28*dpr,padT+8*dpr); }
+  if (S.taskEvents.length>0) {
+    const modeY=mainH;
+    const allEv=[{ep:0,mode:'none',name:''},...S.taskEvents];
+    allEv.forEach((ev,ti)=>{
+      const nextEp=ti<allEv.length-1 ? allEv[ti+1].ep : n;
+      if (nextEp<=allEv[ti]?.ep&&ti>0) return;
+      const x0=toX(allEv[ti].ep), x1=Math.min(toX(nextEp),W-padR);
+      const col=allEv[ti].mode==='assimilation'?'#6f7355':allEv[ti].mode==='accommodation'?'#b65d3a':'#adb5bd';
+      ctx.fillStyle=col+'55'; ctx.fillRect(x0,modeY,x1-x0,modeH);
+      if (x1-x0>10*dpr) {
+        ctx.fillStyle=col; ctx.font=`${6*dpr}px monospace`;
+        ctx.fillText(allEv[ti].mode==='assimilation'?'A':allEv[ti].mode==='accommodation'?'C':'', x0+2*dpr, modeY+modeH*0.72);
+      }
+    });
+    ctx.strokeStyle='#d5cab4'; ctx.lineWidth=0.5;
+    ctx.strokeRect(padL,modeY,W-padL-padR,modeH);
+  }
+}
+
+// ── Left panel ────────────────────────────────────────────────────────────────
+function openInterp() {
+  S.leftPanelView='interp';
+  document.getElementById('lp-title').textContent='Interpretability';
+  document.getElementById('lp-interp').style.display='flex';
+  document.getElementById('lp-sigs').style.display='none';
+  document.getElementById('interp-tabs').style.display='flex';
+  document.getElementById('left-panel').classList.add('open');
+  document.getElementById('sec-interp').classList.add('open');
+  setTimeout(redrawPanel, 60);
+}
+function openSigs() {
+  S.leftPanelView='sigs';
+  document.getElementById('lp-title').textContent='Signatures';
+  document.getElementById('lp-interp').style.display='none';
+  document.getElementById('lp-sigs').style.display='flex';
+  document.getElementById('interp-tabs').style.display='none';
+  document.getElementById('left-panel').classList.add('open');
+  document.getElementById('sec-sigs').classList.add('open');
+  renderSignatures();
+}
+function closeLeftPanel() {
+  document.getElementById('left-panel').classList.remove('open');
+  S.leftPanelView=null;
+}
+function switchInterpTab(tab) {
+  S.activeInterpTab=tab;
+  document.querySelectorAll('.itab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+  document.querySelectorAll('.lp-canvas').forEach(c=>c.classList.remove('active'));
+  const active=document.getElementById('c-'+tab); if (active) active.classList.add('active');
+  redrawPanel();
+}
+
+// ── KaTeX signatures ──────────────────────────────────────────────────────────
+function ki(tex) { try{return katex.renderToString(tex,{displayMode:false,throwOnError:false})}catch(e){return`<code>${tex}</code>`} }
+function kd(tex) { try{return katex.renderToString(tex,{displayMode:true,throwOnError:false})}catch(e){return`<code>${tex}</code>`} }
+function renderSignatures() {
+  const body=document.getElementById('sig-body');
+  if (body._rendered) return; body._rendered=true;
+  body.innerHTML=`
+<div class="sig-section"><h4>ALRNN dynamics</h4>
+<p>Additive latent RNN with low-rank nonlinearity:</p>
+${kd('z_{t+1} = A \\odot z_t + \\phi(z_t)\\,W_A^T W_B^T + h')}
+<p>where ${ki('\\phi')} is a soft ReLU on the first ${ki('P')} units, ${ki('W_B \\in \\mathbb{R}^{M \\times r}')}, ${ki('W_A \\in \\mathbb{R}^{r \\times M}')} form a rank-${ki('r')} factorization, and ${ki('x_t = B z_t')} is the observation.</p></div>
+<hr class="sig-sep">
+<div class="sig-section"><h4>φ-embedding (diff_phi)</h4>
+<p>24-dimensional differentiable attractor signature:</p>
+${kd('\\phi(\\theta) = [\\,|\\lambda_1|,\\ldots,|\\lambda_{M-P}|,\\;\\bar{a}_1,\\ldots,\\bar{a}_P,\\;\\sigma_1,\\ldots,\\sigma_P,\\;H_{\\text{topo}},\\;\\Lambda_{\\max}\\,]')}
+<p>• ${ki('|\\lambda_j|')}: eigenvalue magnitudes of linear core block&nbsp;&nbsp;• ${ki('\\bar{a}_j, \\sigma_j')}: gate occupancy mean and std<br>
+• ${ki('H_{\\text{topo}}')}: topological entropy from symbolic dynamics&nbsp;&nbsp;• ${ki('\\Lambda_{\\max}')}: max Lyapunov exponent</p></div>
+<hr class="sig-sep">
+<div class="sig-section"><h4>Signature Fisher ${ki('F^\\Phi')}</h4>
+<p>Parameter importance for attractor geometry, via exact autograd through ${ki('\\phi')}:</p>
+${kd('F^\\Phi_j = \\sum_{k=1}^{\\dim\\phi} \\left(\\frac{\\partial \\phi_k}{\\partial \\theta_j}\\right)^2')}
+<p>High ${ki('F^\\Phi_j')} → parameter ${ki('\\theta_j')} strongly shapes attractor structure. Used as EWC penalty weight.</p></div>
+<hr class="sig-sep">
+<div class="sig-section"><h4>EWC loss</h4>
+${kd('\\mathcal{L}_{\\text{EWC}} = \\lambda \\sum_j \\hat{F}^\\Phi_j \\,(\\theta_j - \\theta_j^*)^2')}
+<p>${ki('\\theta^*')} = post-task anchor, ${ki('\\hat{F}^\\Phi')} = normalized accumulated Fisher. Total: ${ki('\\mathcal{L} = \\mathcal{L}_{\\text{recon}} + \\mathcal{L}_{\\text{EWC}}')}.</p></div>
+<hr class="sig-sep">
+<div class="sig-section"><h4>SLAO — B_merge</h4>
+<p>Fisher-weighted EMA merges solutions across tasks:</p>
+${kd('B_{\\text{merged}} \\mathrel{+}= \\alpha(1 - \\hat{F}^\\Phi_j)(W_B^{(t)} - B_{\\text{merged}})')}
+<p>Protected directions (high Fisher) update slowly; free directions adapt fully.</p></div>
+<hr class="sig-sep">
+<div class="sig-section"><h4>Adaptive probe</h4>
+${kd('\\rho = \\frac{\\text{MSE}(B_{\\text{merged}};\\,x_{\\text{new}})}{\\text{MSE}_{\\text{ref}}}\\;\\begin{cases}< \\tau & \\text{assimilation} \\\\ \\geq \\tau & \\text{accommodation}\\end{cases}')}
+<p>Assimilation: high EWC λ (recall from schema). Accommodation: low λ (learn new schema).</p></div>
+<hr class="sig-sep">
+<div class="sig-section"><h4>QR-init</h4>
+${kd('W_A \\leftarrow Q, \\quad W_B^{\\top} = QR \\quad (\\text{prev task})')}
+<p>Seeds new read-out directions orthogonally from prior write matrix. Reduces interference.</p></div>`;
+}
+
+// ── Strip ─────────────────────────────────────────────────────────────────────
+function renderStrip() {
+  const container=document.getElementById('strip-pills'); container.innerHTML='';
+  S.stream.forEach((task,i)=>{
+    const pill=document.createElement('div');
+    const isTrained=S.trained.has(i), isCurrent=i===S.current, isFuture=!isTrained&&!isCurrent;
+    pill.className='pill'+(isCurrent?' active':isTrained?' trained':' future');
+    const ev=S.taskEvents.find(e=>e.taskIdx===i);
+    const mode=ev?(ev.mode==='assimilation'?'↺':ev.mode==='accommodation'?'↗':''):'';
+    pill.innerHTML=`<span class="pill-dot" style="background:${task.color}"></span>${task.label||task.name}${mode?`<span class="pill-mode">${mode}</span>`:''}`;
+    pill.onclick=()=>send({op:'get_data',task_idx:i});
+    container.appendChild(pill);
+  });
+}
+
+let _stripHT=null;
+function showStrip() { document.getElementById('strip').classList.add('show'); clearTimeout(_stripHT); }
+function hideStrip() { _stripHT=setTimeout(()=>document.getElementById('strip').classList.remove('show'),600); }
+let _scrubHT=null;
+function showScrubber() { document.getElementById('scrubber').classList.add('show'); clearTimeout(_scrubHT); }
+function hideScrubber() { _scrubHT=setTimeout(()=>document.getElementById('scrubber').classList.remove('show'),600); }
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+function toggleSec(id) { document.getElementById(id).classList.toggle('open'); }
+function renderTaskList() {
+  const el=document.getElementById('taskList'); el.innerHTML='';
+  S.stream.forEach((task,i)=>{
+    const div=document.createElement('div');
+    const isTrained=S.trained.has(i), isCurrent=i===S.current;
+    div.className='task-item'+(isCurrent?' current':isTrained?' trained':'');
+    div.innerHTML=`<span class="task-dot" style="background:${task.color}"></span>${task.label||task.name}<span style="margin-left:auto;font-size:9px">${isTrained?'✓':isCurrent?'→':''}</span>`;
+    el.appendChild(div);
+  });
+}
+function updateNextBtn() {
+  const btn=document.getElementById('nextBtn');
+  const allDone=S.stream.length>0&&S.trained.size===S.stream.length;
+  btn.disabled=!S.stream.length||allDone||!S.connected;
+  btn.textContent=allDone?'✓ Done':'▶ Next';
+}
+function renderSnaps() {
+  const grid=document.getElementById('snapGrid'); grid.innerHTML='';
+  for (let slot=0;slot<6;slot++) {
+    const card=document.createElement('div');
+    const snap=S.snapshots[slot];
+    card.className='snap-card'+(snap?' used':'');
+    if (snap) {
+      card.innerHTML=`<span class="snap-lbl">S${slot}</span><span class="snap-name">${snap.label||''}</span><span class="snap-mse">MSE ${snap.mse?.toFixed(4)||'—'}</span>`;
+      card.onclick=()=>send({op:'load_snapshot',slot});
+    } else {
+      card.innerHTML=`<span class="snap-lbl">S${slot}</span><span class="snap-empty">empty</span>`;
+      card.onclick=()=>saveSnap(slot);
+    }
+    grid.appendChild(card);
+  }
+}
+function saveSnap(slot) {
+  slot=slot??[...Array(6).keys()].find(s=>!S.snapshots[s])??0;
+  send({op:'snapshot',slot,label:S.stream[S.current]?.name||`t${S.current}`});
+}
+
+// ── Custom stream ─────────────────────────────────────────────────────────────
+const SYS_P={lorenz:'ρ',torus:'ω₂',van_der_pol:'μ'};
+const SYS_D={lorenz:28,torus:0.382,van_der_pol:1.5};
+const SYS_C={lorenz:'#3e6e8e',torus:'#6f7355',van_der_pol:'#b65d3a'};
+function custSysChange() {
+  const sys=document.getElementById('cust-sys').value;
+  document.getElementById('cust-param-lbl').textContent=(SYS_P[sys]||'p')+' =';
+  document.getElementById('cust-param').value=SYS_D[sys]||1;
+}
+function custAdd() {
+  const sys=document.getElementById('cust-sys').value;
+  const param=parseFloat(document.getElementById('cust-param').value);
+  const ep=parseInt(document.getElementById('cust-ep').value)||150;
+  if (isNaN(param)) return;
+  S.customTasks.push({system:sys,param,epochs:ep}); renderCustomChips();
+  document.getElementById('cust-load-btn').disabled=false;
+}
+function custRemove(i) {
+  S.customTasks.splice(i,1); renderCustomChips();
+  document.getElementById('cust-load-btn').disabled=S.customTasks.length===0;
+}
+function custClear() { S.customTasks=[]; renderCustomChips(); document.getElementById('cust-load-btn').disabled=true; }
+function custLoad() { if (!S.customTasks.length) return; send({op:'set_custom_stream',tasks:S.customTasks}); }
+function renderCustomChips() {
+  const row=document.getElementById('custom-chips'); row.innerHTML='';
+  S.customTasks.forEach((t,i)=>{
+    const chip=document.createElement('span'); chip.className='ctask-chip';
+    chip.innerHTML=`<span class="ctask-chip-dot" style="background:${SYS_C[t.system]||'#888'}"></span>${t.system.split('_')[0]} ${SYS_P[t.system]||'?'}=${t.param} (${t.epochs}ep)<span class="chip-x" onclick="custRemove(${i})">×</span>`;
+    row.appendChild(chip);
+  });
+}
+
+// ── Misc ──────────────────────────────────────────────────────────────────────
+function loadPreset() { send({op:'set_stream',preset:document.getElementById('presetSel').value}); }
+function applyModel() {
+  const M=+document.getElementById('hpM').value, P=+document.getElementById('hpP').value;
+  const rank=+document.getElementById('hpRank').value, lam=+document.getElementById('hpLam').value;
+  S.M=M; S.P=P; S.rank=rank;
+  send({op:'init',M,P,rank,lam});
+  send({op:'set_cl',use_cl:document.getElementById('chkCL').checked,
+    use_merge:document.getElementById('chkMerge').checked,
+    use_qr:document.getElementById('chkQR').checked,
+    adaptive:document.getElementById('chkAdaptive').checked,lam});
+}
+function hudSet(msg) { if(msg) document.getElementById('hud').textContent=msg; }
+let _stT=null;
+function showStatus(msg) {
+  const el=document.getElementById('status');
+  el.textContent=msg; el.style.opacity='1';
+  clearTimeout(_stT); _stT=setTimeout(()=>el.style.opacity='0',4000);
+}
+
+// ── Keyboard ──────────────────────────────────────────────────────────────────
+document.addEventListener('keydown',e=>{
+  if (e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+  if (e.key==='n'&&!document.getElementById('nextBtn').disabled) {
+    send({op:'next',epochs:+document.getElementById('hpEpochs').value||150});
+  }
+  if (e.key==='r') send({op:'freerun',steps:3000});
+  if (e.key===' ') { e.preventDefault(); scrubToggle(); }
+  if (e.key==='ArrowLeft')  scrubStep(-1);
+  if (e.key==='ArrowRight') scrubStep(1);
+});
+
+// ── Hover triggers ────────────────────────────────────────────────────────────
+const stripTrig=document.getElementById('strip-trigger'),stripEl=document.getElementById('strip');
+stripTrig.addEventListener('mouseenter',showStrip);
+stripEl.addEventListener('mouseenter',showStrip);
+stripEl.addEventListener('mouseleave',hideStrip);
+stripTrig.addEventListener('mouseleave',hideStrip);
+const scrubTrig=document.getElementById('scrub-trigger'),scrubEl=document.getElementById('scrubber');
+scrubTrig.addEventListener('mouseenter',showScrubber);
+scrubEl.addEventListener('mouseenter',showScrubber);
+scrubEl.addEventListener('mouseleave',hideScrubber);
+scrubTrig.addEventListener('mouseleave',hideScrubber);
+
+// ── Checkbox listeners ────────────────────────────────────────────────────────
+function syncCL() {
+  send({op:'set_cl',use_cl:document.getElementById('chkCL').checked,
+    use_merge:document.getElementById('chkMerge').checked,
+    use_qr:document.getElementById('chkQR').checked,
+    adaptive:document.getElementById('chkAdaptive').checked,
+    lam:+document.getElementById('hpLam').value});
+}
+['chkCL','chkMerge','chkQR','chkAdaptive'].forEach(id=>
+  document.getElementById(id).addEventListener('change',syncCL));
+document.getElementById('chkRegion').addEventListener('change',e=>{
+  S.useRegionColors=e.target.checked;
+  if (S.trajBuffer) updateModelLine(S.trajBuffer.xyz,S.trajBuffer.regions,S.trajBuffer.n);
+});
+document.getElementById('chkAutoRot').addEventListener('change',e=>S.autoRotate=e.target.checked);
+document.querySelectorAll('.itab').forEach(b=>b.addEventListener('click',()=>switchInterpTab(b.dataset.tab)));
+document.getElementById('lp-close').addEventListener('click',closeLeftPanel);
+document.getElementById('nextBtn').addEventListener('click',()=>{
+  send({op:'next',epochs:+document.getElementById('hpEpochs').value||150});
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded',()=>{
+  initThree(); renderSnaps(); renderCustomChips(); drawLossPlot();
+  wsConnect();
+});
+</script>
+</body>
+</html>

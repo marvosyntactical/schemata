@@ -1,0 +1,453 @@
+\documentclass[10pt]{beamer}
+\usetheme[
+%%% option passed to the outer theme
+%    progressstyle=fixedCircCnt,   % fixedCircCnt, movingCircCnt (moving is deault)
+  ]{Feather}
+
+% If you want to change the colors of the various elements in the theme, edit and uncomment the following lines
+
+% Change the bar colors:
+%\setbeamercolor{Feather}{fg=red!20,bg=red}
+
+% Change the color of the structural elements:
+%\setbeamercolor{structure}{fg=red}
+
+% Change the frame title text color:
+%\setbeamercolor{frametitle}{fg=blue}
+
+% Change the normal text color background:
+%\setbeamercolor{normal text}{fg=black,bg=gray!10}
+
+%-------------------------------------------------------
+% INCLUDE PACKAGES
+%-------------------------------------------------------
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage[T1]{fontenc}
+\usepackage{helvet}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{amssymb}
+\usepackage{tcolorbox}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{multicol}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{thmtools}
+\usepackage[framemethod=TikZ]{mdframed}
+
+% ====== BIB FUCKERY =======
+%\usepackage[backend=bibtex, style=nature]{biblatex}
+\usepackage[
+  backend=biber,
+  style=authoryear,      % or numeric, ieee, etc.
+  maxbibnames=99,
+  sorting=nyt            % or none (order of appearance)
+]{biblatex}
+
+\addbibresource{bib.bib} % your .bib file
+
+\mdfdefinestyle{theoremstyle}{
+    linecolor=black,
+    linewidth=1pt,
+    frametitlerule=true,
+    backgroundcolor=gray!10,
+    innertopmargin=\topskip,
+}
+
+\declaretheoremstyle[
+    spaceabove=6pt,
+    spacebelow=6pt,
+    headfont=\normalfont\bfseries,
+    bodyfont=\normalfont,
+    mdframed={style=theoremstyle},
+]{mystyle}
+
+%\declaretheorem[style=mystyle]{theorem}
+%\declaretheorem[style=mystyle]{proposition}
+%\declaretheorem[style=mystyle]{lemma}
+
+\DeclareMathSizes{10}{10}{7}{5}
+
+\usefonttheme{professionalfonts}
+
+
+\DeclareMathAlphabet{\mathpzc}{OT1}{pzc}{m}{it}
+
+\newcommand{\argmax}[1]{\underset{#1}{\text{argmax}}}
+\newcommand{\argmin}[1]{\underset{#1}{\text{argmin}}}
+
+
+\definecolor{mybackgroundcolor}{HTML}{1A1A26}
+\definecolor{mybackgroundcolor1}{HTML}{1A1A24}
+
+\tcbuselibrary{theorems}
+
+\newtcbtheorem{mydef}{Definition}%
+{colback=green!5,colframe=green!35!black,sharp corners, oversize, fonttitle=\bfseries}{def}
+
+\newtcbtheorem{mylemma}{Lemma}%
+{colback=green!5,colframe=brown!45!black,sharp corners, oversize, fonttitle=\bfseries}{lem}
+
+\newtcbtheorem{myprop}{Satz}%
+{colback=green!5,colframe=red!50!black,sharp corners, oversize, fonttitle=\bfseries}{prop}
+
+\newtcbtheorem{myproof}{Beweisskizze}%
+{colback=green!5,colframe=red!80!black,sharp corners, oversize, fonttitle=\bfseries}{prop}
+
+
+
+%  ----------- custom commands ------------
+\newcommand\independent{\protect\mathpalette{\protect\independenT}{\perp}}
+\def\independenT#1#2{\mathrel{\rlap{$#1#2$}\mkern2mu{#1#2}}}
+
+
+% used in chapter 5mfsoln:
+
+\newcommand{\Xtau}[1]{X^{1,N}_{\tau_N#1}}
+\newcommand{\E}[1]{\mathbb{E}\left[#1\right]}
+\newcommand{\Var}[1]{\mathbb{V}\text{ar}\left(#1\right)}
+\newcommand{\Cov}[1]{\mathbb{C}\text{ov}\left(#1\right)}
+\newcommand{\M}[1]{|#1|^2}
+\renewcommand{\P}[3]{\mathbb{P}#1\left(#3\;#2\right)}
+\newcommand{\R}{\mathbb{R}}
+
+\newcommand{\CC}{C([0,T];\R^{2D})}
+\newcommand{\PP}{\mathpzc{P}(\CC)}
+\newcommand{\PPP}{\mathpzc{P}(\PP)}
+\newcommand{\F}{\mathbb{F}_\varphi}
+\newcommand{\Zi}{Z^{i,N}}
+\newcommand{\sums}[2]{\underset{#1=1}{\overset{#2}{\sum}}}
+
+
+\renewcommand{\Xi}{X^{i,N}} % TODO NOTE Xi overwritten
+\newcommand{\Vi}{V^{i,N}}
+%\newcommand{\Zi}{Z^{i,N}}  % already defined above
+
+\renewcommand{\Xe}{X^{1,N}}
+\newcommand{\Ve}{V^{1,N}}
+\newcommand{\Ze}{Z^{1,N}}
+
+
+\newcommand{\sumn}[1]{\underset{i=1}{\overset{#1}{\sum}}}
+
+\newcommand{\AvN}{\frac{1}{N}\sum_{i=1}^N} % average over i=1 -> N
+\newcommand{\sn}{\sum_{i=1}^n}
+\newcommand{\Xa}[1]{X^\alpha(\rho_{#1})}
+\newcommand{\XaN}[1]{X^\alpha(\rho^N_{#1})}
+\newcommand{\dd}[1]{\frac{\partial^2}{\partial{#1}^2}} % 2nd order diagonal terms
+
+\newcommand{\D}{\mathbb{D}}
+\newcommand{\I}{\mathbb{I}}
+
+\newcommand{\law}{\overset{\mathpzc{D}}{\to}}
+\newcommand{\conv}[1]{\overset{#1\to\infty}{\to}}
+\newcommand{\con}[2]{\underset{#1\to\infty}{\overset{#2}{\to}}}
+\newcommand{\linf}[1]{\underset{#1\to\infty}{\lim}}
+
+\newcommand{\FN}{F_N(X_t^{(N)})}
+\newcommand{\MN}{M_N(X_t^{(N)})}
+\newcommand{\ZN}{Z^{(N)}_t}
+\newcommand{\VN}{V^{(N)}_t}
+\newcommand{\XN}{X^{(N)}_t}
+
+\newcommand{\Pfs}{\;\mathbb{P}\text{-f.s.}}
+
+\newcommand{\driv}[1][2]{\frac{\partial #1}{\partial #2}}
+\newcommand{\ddriv}[1][2]{\frac{\partial^2 #1}{\partial #2^2}}
+
+\newcommand{\Cb}[1]{\mathpzc{C}_b(\R^{#1})}
+\newcommand{\Ccinf}[1]{\mathpzc{C}_c^\infty(\R^{#1})}
+
+
+
+% McKean / Wasserstein Unique Proof
+\newcommand{\XMF}{\overline{X}_t}
+\newcommand{\VMF}{\overline{V}_t}
+\newcommand{\ZMF}{\overline{Z}_t}
+
+\newcommand{\XH}{\Hat{X}_t^i}
+\newcommand{\VH}{\Hat{V}_t^i}
+\newcommand{\ZH}{\Hat{Z}_t^i}
+
+\newcommand{\XD}{\Tilde{X}_t}
+\newcommand{\VD}{\Tilde{V}_t}
+\newcommand{\ZD}{\Tilde{Z}_t}
+
+%\newcommand{\muh}{\Hat{\mu}_t^i}
+\newcommand{\fh}{\Hat{f}_t^i}
+
+\newcommand{\Was}{\underset{t\in[0,T]}{\sup}W_2}
+
+% abschaetzungen
+\newcommand{\Comp}{\mathcal{C}_c^2(\mathbb{R}^{2D})}
+
+% INFO GEO COMMANDS
+\newcommand{\KL}{D_{KL}(p_{\xi_0}||p_\xi)}
+\newcommand{\diag}{_{|_{\xi=\xi_0}}}
+
+%-------------------------------------------------------
+% DEFFINING AND REDEFINING COMMANDS
+%-------------------------------------------------------
+
+% colored hyperlinks
+\newcommand{\chref}[2]{
+  \href{#1}{{\usebeamercolor[bg]{Feather}#2}}
+}
+
+%-------------------------------------------------------
+% INFORMATION IN THE TITLE PAGE
+%-------------------------------------------------------
+
+\title[Schemata in DSR] % [] is optional - is placed on the bottom of the sidebar on every slide
+{ % is placed on the title page
+      \textbf{Schemata in Dynamical Systems Reconstruction}
+}
+
+\author[Marvin Koß]
+{      Marvin Koß
+}
+
+\institute[]
+{
+      Universität Heidelberg -
+      Mathematik
+  %there must be an empty line above this line - otherwise some unwanted space is added between the university and the country (I do not know why;( )
+}
+
+\date{\today}
+
+\definecolor{myGrey}{rgb}{0.55,0.55,0.55}
+\definecolor{tannenbaum}{rgb}{0.0,0.55,0.0}
+\definecolor{pampelmuse}{rgb}{0.7,0.4,0.0}
+
+%-------------------------------------------------------
+% THE BODY OF THE PRESENTATION
+%-------------------------------------------------------
+
+\begin{document}
+
+%-------------------------------------------------------
+% TITLEPAGE
+%-------------------------------------------------------
+
+\begin{frame}{}
+\titlepage
+\end{frame}
+
+%-------------------------------------------------------
+\section{Task}
+%-------------------------------------------------------
+
+\begin{frame}{Task: Schemata for DSR}
+\begin{itemize}[<+->]
+  \item \textbf{Given}: sequential stream $\mathcal{D}_1,\mathcal{D}_2,\ldots$ from distinct dynamical systems
+  \item Fit AL-RNN to each; decide: \textbf{assimilate} or \textbf{accommodate}?
+  \item Interpretation: \emph{cluster DSR models along topological, rate, and geometric criteria}
+  \item Challenge: catastrophic forgetting under sequential gradient updates
+\end{itemize}
+\end{frame}
+
+%-------------------------------------------------------
+\section{Signature Embedding}
+%-------------------------------------------------------
+
+\begin{frame}{Signature Embedding $\Phi(\theta)$}
+\textit{Characterise a trained AL-RNN's attractor:}
+\begin{itemize}[<+->]
+  \item $n_\mathrm{regions}$: \# distinct ReLU activation patterns $\{D_\Omega\}$ along free-run trajectory
+  \item $h_\mathrm{top} = \log\rho(T)$: topological entropy of the symbolic transition matrix $T_{ij}$
+  \item $\lambda_\mathrm{max}$: largest Lyapunov exponent (QR iteration on piecewise-linear Jacobians)
+  \item $|\lambda(A_\mathrm{lin})|$: eigenvalue magnitudes of the linear-unit sub-block
+  \item $\bar{s}_i$: mean activation rate of ReLU unit $i$ along trajectory
+\end{itemize}
+\end{frame}
+
+%-------------------------------------------------------
+\section{Task Update}
+%-------------------------------------------------------
+
+\begin{frame}{Continual Learning \& EWC}
+\begin{itemize}[<+->]
+  \item \textbf{Catastrophic forgetting}: task-$t$ gradients overwrite task-$(t{-}1)$ representation
+  \item \textbf{EWC} (Kirkpatrick et al.\ 2017): penalise changes to important parameters
+    \[
+      \mathcal{L} = \mathcal{L}_t + \frac{\lambda}{2}\sum_i F_i(\theta_i - \theta_i^*)^2,
+      \qquad
+      F_i = \mathbb{E}\!\left[\!\left(\frac{\partial \log p}{\partial \theta_i}\right)^{\!2}\right]
+    \]
+  \item \textbf{Why EWC fails for DSR}:
+    \begin{itemize}
+      \item $F_i$ from one-step MSE $\Rightarrow$ high variance under chaotic divergence
+      \item Orbit-structure parameters (eigenvalues of $A$) get low $F_i$ — protects the wrong things
+    \end{itemize}
+\end{itemize}
+\end{frame}
+
+%-------------------------------------------------------
+\section{Core Idea}
+%-------------------------------------------------------
+
+\begin{frame}{Idea: Signature-EWC}
+\textit{Replace prediction loss in the Fisher by the dynamical signature:}
+\bigskip
+\begin{columns}[T]
+  \begin{column}{0.48\textwidth}
+    \centering\textbf{Standard EWC}
+    \[
+      F_i^{\mathrm{pred}} = \mathbb{E}\!\left[\!\left(\frac{\partial\mathcal{L}_\mathrm{recon}}{\partial\theta_i}\right)^{\!2}\right]
+    \]
+    \vspace{-3mm}
+    \begin{itemize}
+      \item one-step MSE
+      \item noisy under chaos
+      \item gauge-dependent
+    \end{itemize}
+  \end{column}
+  \begin{column}{0.48\textwidth}
+    \centering\textbf{Signature-EWC (ours)}
+    \[
+      F_i^{\Phi} = \left\|\frac{\partial\,\Phi(\theta)}{\partial\theta_i}\right\|^2
+    \]
+    \vspace{-3mm}
+    \begin{itemize}
+      \item long-horizon trajectory stats
+      \item low-variance, stable
+      \item gauge-invariant
+    \end{itemize}
+  \end{column}
+\end{columns}
+\bigskip
+\uncover<2->{%
+  $\Rightarrow$ \emph{replace discrete $n_\mathrm{regions}$, $h_\mathrm{top}$, $\lambda_\mathrm{max}$, \ldots\ by differentiable soft surrogates}
+}
+\end{frame}
+
+%-------------------------------------------------------
+\section{CLUE}
+%-------------------------------------------------------
+
+\begin{frame}{CLUE: Continually Merged LoRAs Updating Elastically}
+\begin{itemize}[<+->]
+  \item Single LoRA $\Delta W = B_\mathrm{merge}\,A_\mathrm{merge}$ accumulates all tasks
+  \item \textbf{First} to achieve \emph{positive backward transfer} on a standard CL benchmark (language modelling)
+  \medskip
+  \item \textbf{$A$ — orthogonal re-init at each task boundary}:
+    \[
+      A_\mathrm{merge} \leftarrow Q^\top, \qquad Q,R = \mathrm{QR}\!\left(A_\mathrm{ft}^\top\right)
+    \]
+  \item \textbf{$B$ — Fisher-weighted EMA}:
+    \[
+      B_\mathrm{merge} \leftarrow B_\mathrm{merge} + \alpha\odot(B_\mathrm{ft}-B_\mathrm{merge}),
+      \qquad \alpha_{ij} = \frac{1}{\sqrt{t}}\!\left(1 - \hat{F}_{ij}^{W_B}\right)
+    \]
+  \item High importance $\Rightarrow$ protected;\quad low/irrelevant $\Rightarrow$ updated freely
+\end{itemize}
+\end{frame}
+
+%-------------------------------------------------------
+\section{Adaptive Lambda}
+%-------------------------------------------------------
+
+\begin{frame}{Adaptive $\lambda$: Assimilate vs Accommodate}
+\begin{itemize}[<+->]
+  \item After task $t$: probe $\phi(\theta_t)$ against stored class centroids $\bar\phi_c$
+  \item Nearest class: $c^* = \arg\min_c\,\|\phi_t - \bar\phi_c\|/\sigma_\phi$,\quad distance $d^*$
+  \item \textbf{Assimilation} $(d^* < \sigma_\mathrm{schema}\cdot\sigma_\mathrm{intra})$:\\
+    \quad known schema $\rightarrow$ $\lambda_\mathrm{EWC}\leftarrow\lambda_\mathrm{assim}$ \emph{(high protection)}
+  \item \textbf{Accommodation} (otherwise):\\
+    \quad new schema $\rightarrow$ $\lambda_\mathrm{EWC}\leftarrow\lambda_\mathrm{accom}$ \emph{(high plasticity)}
+  \item Probe runs \textbf{before} appending $\phi_t$ — avoids self-matching artefact
+\end{itemize}
+\end{frame}
+
+%-------------------------------------------------------
+\section{Pseudocode}
+%-------------------------------------------------------
+
+\begin{frame}{Task Boundary Operations}
+\footnotesize
+\begin{algorithmic}[1]
+\Require trained $(W_A^{(t)},\,W_B^{(t)})$;\; class $c_t$;\; schema library $\mathcal{L}$
+\State $F \;\leftarrow\; \textsc{SignatureFisher}(W_B^{(t)})$
+  \Comment{$\|\partial\Phi/\partial\theta\|^2$; 72 backward passes}
+\State $\hat{F} \leftarrow \hat{F} + \tfrac{1}{\sqrt{t}}(F - \hat{F});\quad
+       \hat{W}_B \leftarrow \hat{W}_B + \tfrac{1}{\sqrt{t}}(W_B^{(t)}-\hat{W}_B)$
+  \Comment{EMA anchor}
+\State $Q,R \leftarrow \mathrm{QR}\!\left((W_A^{(t)})^\top\right);\quad
+       A_\mathrm{merge} \leftarrow Q^\top$
+  \Comment{CLUE: orthogonal $A$}
+\State $\alpha_{ij} \leftarrow \tfrac{1}{\sqrt{t}}(1-\hat{F}_{ij});\quad
+       B_\mathrm{merge} \leftarrow B_\mathrm{merge} + \alpha\!\odot\!(W_B^{(t)}-B_\mathrm{merge})$
+  \Comment{CLUE: $B$ EMA}
+\State $\phi_t \leftarrow \textsc{DiffPhi}(\theta_t)$
+  \Comment{24-dim differentiable signature}
+\State $\lambda_\mathrm{next} \leftarrow \textsc{SchemaProbe}(\phi_t,\;\mathcal{L})$
+  \Comment{assimilation / accommodation}
+\State $\mathcal{L} \leftarrow \mathcal{L}\cup\{(c_t,\,\phi_t)\}$
+  \Comment{append \emph{after} probe}
+\Statex
+\Statex \textbf{--- start of task $t+1$ ---}
+\State $W_A^{(0)} \leftarrow Q^\top;\quad \lambda_\mathrm{EWC} \leftarrow \lambda_\mathrm{next}$
+  \Comment{QR re-init + adaptive $\lambda$}
+\end{algorithmic}
+\end{frame}
+
+%-------------------------------------------------------
+\section{Results}
+%-------------------------------------------------------
+
+\begin{frame}{Evaluation Metrics}
+\[
+  R_{t,i} \;=\; -\left\|\frac{\phi(\theta_t) - \phi_i^\mathrm{ora}}{\sigma_\phi}\right\|_2
+  \qquad\text{(higher = better)}
+\]
+\begin{itemize}
+  \item \textbf{BWT} $= \dfrac{1}{T-1}\displaystyle\sum_{i<T}\!\bigl(R_{T-1,i}-R_{i,i}\bigr)$:\quad
+        positive $=$ past tasks improved after stream ends
+  \medskip
+  \item \textbf{rec\_ora}:\quad \% of steps where nearest oracle in $\phi$-space has the correct class label
+  \medskip
+  \item $\boldsymbol{R}_\textbf{diag}$:\quad mean $R_{t,t}$ — training-time fit quality
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Results: 10-task stream (Lorenz / Torus / Van der Pol)}
+\begin{table}
+\centering\small
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{l@{\hspace{10pt}}c@{\hspace{10pt}}c@{\hspace{10pt}}c}
+\hline
+Method & BWT $\uparrow$ & rec\_ora $\uparrow$ & $R_\mathrm{diag}\;\uparrow$ \\
+\hline
+baseline                     & $-5.43$          & $0.60$          & $-10.91$ \\
+\texttt{pred\_ewc}           & $+0.43$          & $0.50$          & $-10.87$ \\
+\texttt{pred\_ewc\_adaptive} & $+0.49$          & $0.80$          & $-9.16$  \\
+\texttt{piagets}             & $+1.10$          & $0.70$          & $-11.72$ \\[2pt]
+\textbf{piagets\_adaptive}   & $\mathbf{+2.24}$ & $\mathbf{0.90}$ & $-9.58$  \\
+\hline
+\end{tabular}
+\end{table}
+\begin{itemize}[<+->]
+  \item Only method with positive BWT \emph{and} high recognition
+  \item Key: adaptive $\lambda$ makes accommodation genuinely plastic ($\lambda_\mathrm{accom}=2 \ll \lambda_\mathrm{assim}=10$)
+  \item BWT partly artefactual (B\_merge bias) — \textbf{rec\_ora = 0.90} is the honest metric
+\end{itemize}
+\end{frame}
+
+%-------------------------------------------------------
+
+\begin{frame}{}
+    \centering \textit{Thank you for your attention!}
+\end{frame}
+
+\begin{frame}[allowframebreaks]{References}
+% \nocite{*}
+    \printbibliography
+\end{frame}
+
+\end{document}

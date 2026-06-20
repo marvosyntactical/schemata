@@ -1,0 +1,18 @@
+PIAGETS validation results
+
+Oracle φ-distance matrix:
+  limit_cycle : 0.0000  6.5917  6.4953
+  torus       : 6.5917  0.0000  8.2073
+  van_der_pol : 6.4953  8.2073  0.0000
+
+After task-1 fine-tuning:
+  baseline    : d_forget=29.8558  d_current=27.7876  recon=0.02877
+  pred_ewc    : d_forget=11.2886  d_current=13.0120  recon=0.07238
+  piagets     : d_forget=24.3254  d_current=27.5997  recon=0.08898
+
+After task-2 fine-tuning:
+  baseline    : d_forget=59.9057  d_current=58.6996  recon=0.03780
+  pred_ewc    : d_forget=9.6799  d_current=11.5093  recon=0.06418
+  piagets     : d_forget=14.6210  d_current=17.5272  recon=0.07162
+
+Final ARI: 0.1667

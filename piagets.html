@@ -1,0 +1,1421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PIAGETS — continual DSR</title>
+<script src="/three.min.js"></script>
+<style>
+:root{
+  --ink:#241f19; --ink-soft:#5a5246;
+  --paper:#ebe4d6; --paper-2:#e0d7c5; --paper-3:#d5cab4;
+  --line:#c5b89f; --clay:#b65d3a; --clay-deep:#94431f;
+  --ochre:#b98e3e; --moss:#6f7355; --blue:#3e6e8e; --blue-bright:#6fa3c7;
+  --night:#10151b;
+  --mono:ui-monospace,'SF Mono','Cascadia Mono',Menlo,Consolas,monospace;
+  --serif:'Iowan Old Style',Georgia,'Times New Roman',serif;
+  --bar:44px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:#10151b}
+
+/* sidebar is full-height — no top-bar row above it */
+body{display:flex;flex-direction:row;background:var(--night)}
+#stage{position:relative;flex:1;min-width:0;height:100%;background:var(--night)}
+/* THREE.js canvas is inserted as first child via JS; position+z-index set via JS */
+#vignette{position:absolute;inset:0;pointer-events:none;z-index:2;
+  background:radial-gradient(ellipse at 50% 42%,transparent 52%,rgba(5,8,11,.6) 100%)}
+
+/* topBar floats inside stage — sidebar sits above it visually */
+#topBar{
+  position:absolute;top:0;left:0;right:0;height:var(--bar);z-index:20;
+  background:linear-gradient(180deg,var(--paper) 0%,var(--paper-2) 100%);
+  border-bottom:1px solid var(--ink);
+  display:flex;align-items:center;gap:8px;padding:0 14px;
+}
+#connDot{width:7px;height:7px;border-radius:50%;background:var(--line);
+  flex:none;transition:background .4s}
+#connDot.ok{background:var(--moss)}
+#connDot.err{background:var(--clay)}
+#topBarLabel{font-family:var(--mono);font-size:10px;color:var(--ink-soft);
+  flex:none;letter-spacing:.06em;white-space:nowrap;border-right:1px solid var(--line);
+  padding-right:10px;margin-right:2px}
+#seqScroll{flex:1;overflow-x:auto;overflow-y:hidden;display:flex;align-items:center;
+  gap:5px;scrollbar-width:none;min-width:0}
+#seqScroll::-webkit-scrollbar{display:none}
+#topProbeBadge{flex:none;display:none;padding:2px 9px;border-radius:3px;
+  font-family:var(--mono);font-size:9px;letter-spacing:.1em;font-weight:700;text-transform:uppercase}
+#topProbeBadge.assim{background:rgba(62,110,142,.15);color:var(--blue);border:1px solid var(--blue)}
+#topProbeBadge.accom{background:rgba(185,142,62,.15);color:var(--ochre);border:1px solid var(--ochre)}
+
+/* ── info pane (full-height, fixed) ── */
+#infoPane{
+  position:fixed;left:0;top:0;height:100%;
+  width:min(500px,88vw);z-index:50;
+  background:linear-gradient(180deg,var(--paper) 0%,#e6ddcb 100%);
+  border-right:1px solid #2a2520;box-shadow:8px 0 28px rgba(0,0,0,.45);
+  transform:translateX(-104%);transition:transform .42s cubic-bezier(.22,.85,.3,1);
+  display:flex;flex-direction:column}
+@starting-style{#infoPane{transform:translateX(-104%)}}
+#infoPane.show{transform:none}
+#infoHead{display:flex;align-items:center;gap:10px;padding:14px 18px 10px;
+  border-bottom:1px solid var(--ink);flex:none}
+#infoHead h3{font-size:15px;font-weight:700}
+#infoClose{margin-left:auto;border:1px solid var(--line);background:transparent;border-radius:50%;
+  width:24px;height:24px;cursor:pointer;color:var(--ink-soft);font-size:11px;
+  display:flex;align-items:center;justify-content:center;padding:0;transition:all .18s}
+#infoClose:hover{border-color:var(--clay);color:var(--clay);transform:rotate(90deg)}
+#infoBody{overflow-y:auto;padding:4px 20px 48px;font-size:13px;line-height:1.65;color:var(--ink);flex:1}
+#infoBody::-webkit-scrollbar{width:8px}
+#infoBody::-webkit-scrollbar-thumb{background:var(--paper-3);border:2px solid var(--paper);border-radius:4px}
+#infoBody h4{margin:18px 0 5px;font-size:10.5px;font-family:var(--mono);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--clay-deep)}
+#infoBody p{margin:7px 0}
+#infoBody ul,#infoBody ol{padding-left:18px;margin:6px 0}
+#infoBody li{margin:4px 0}
+#infoBody .katex-display{margin:10px 0;overflow-x:auto;overflow-y:hidden}
+#infoBody code{font-family:var(--mono);font-size:11px;background:var(--paper-2);padding:1px 4px;border-radius:3px}
+#infoBody table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px;margin:8px 0}
+#infoBody td,#infoBody th{padding:4px 8px;border:1px solid var(--line)}
+#infoBody th{background:var(--paper-2);font-weight:600}
+
+/* ── sidebar (full-height, z-index above topBar) ── */
+#side{
+  width:354px;flex:none;height:100%;
+  overflow-y:auto;overscroll-behavior:contain;
+  background:linear-gradient(180deg,var(--paper) 0%,#e6ddcb 100%);
+  border-left:1px solid #2a2520;box-shadow:-8px 0 24px rgba(0,0,0,.35);
+  padding:12px 15px 60px;
+  position:relative;z-index:25;
+}
+#side::-webkit-scrollbar{width:8px}
+#side::-webkit-scrollbar-thumb{background:var(--paper-3);border:2px solid var(--paper);border-radius:4px}
+.brand{padding-bottom:9px;border-bottom:1px solid var(--ink);margin-bottom:4px}
+.brand h2{font-size:28px;font-weight:700;letter-spacing:-.01em}
+.brand h2 span{color:var(--clay)}
+
+/* ── accordion — JS controls height, just need overflow:hidden ── */
+.sec{border-bottom:1px solid var(--line)}
+.sechead{cursor:pointer;user-select:none;
+  display:flex;align-items:center;gap:7px;padding:10px 0 6px}
+.sechead .no{font-family:var(--mono);font-size:9.5px;color:var(--clay);letter-spacing:.1em;flex:none}
+.sechead h3{font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-variant:small-caps}
+.sechead .tick{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--ink-soft);
+  transition:transform .35s cubic-bezier(.25,.8,.3,1);flex:none}
+.secbody{overflow:hidden;height:0;transition:height .38s cubic-bezier(.25,.8,.3,1)}
+.secinner{padding-bottom:10px}
+
+.ibtn{flex:none;width:16px;height:16px;border-radius:50%;border:1px solid var(--ink-soft);
+  background:transparent;color:var(--ink-soft);font:italic 600 10px var(--serif);
+  line-height:1;cursor:pointer;padding:0;margin-left:4px;transition:all .18s}
+.ibtn:hover{border-color:var(--clay);color:var(--clay);transform:scale(1.12)}
+
+/* ── toggle switch ── */
+.tgl{display:flex;align-items:center;gap:8px;cursor:pointer;margin:5px 0;
+  font-size:12px;color:var(--ink-soft);user-select:none}
+.tgl input{position:absolute;opacity:0;width:0;height:0}
+.tgl-sw{position:relative;display:inline-block;width:34px;height:18px;flex:none;
+  background:var(--line);border-radius:9px;transition:background .22s}
+.tgl-sw:after{content:"";position:absolute;width:12px;height:12px;border-radius:50%;
+  background:white;top:3px;left:3px;transition:transform .22s;
+  box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.tgl input:checked ~ .tgl-sw{background:var(--clay)}
+.tgl input:checked ~ .tgl-sw:after{transform:translateX(16px)}
+
+/* ── form controls ── */
+.row{display:flex;gap:8px;align-items:center;margin:5px 0}
+.row label{font-size:12px;color:var(--ink-soft);flex:1;min-width:0}
+.row .val{font-family:var(--mono);font-size:11px;color:var(--ink);flex:none}
+select,input[type=number]{font-family:var(--mono);font-size:12px;color:var(--ink);
+  background:#f4eee1;border:1px solid var(--line);border-radius:3px;padding:4px 7px}
+select{width:100%}
+input[type=number]{width:68px;text-align:right}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+input[type=range]{flex:1.2;accent-color:var(--clay);min-width:60px}
+.params{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;margin:5px 0}
+.params .p{display:flex;align-items:center;justify-content:space-between;gap:5px}
+.params .p label{font-family:var(--mono);font-size:10.5px;color:var(--ink-soft)}
+button{font-family:var(--serif);font-size:13px;letter-spacing:.02em;
+  border:1px solid var(--clay-deep);background:var(--clay);color:#f7f1e4;
+  border-radius:3px;padding:6px 12px;cursor:pointer;box-shadow:0 1px 0 rgba(0,0,0,.18)}
+button:hover{background:#c2683f}
+button:active{transform:translateY(1px)}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--ink-soft);box-shadow:none}
+button.ghost:hover{background:var(--paper-2)}
+button.blue{background:var(--blue);border-color:#2c5269}
+button.blue:hover{background:#477b9d}
+button.sm{font-size:11px;padding:4px 8px}
+button.big{font-size:14px;padding:9px 16px;width:100%;letter-spacing:.04em;
+  display:flex;align-items:center;justify-content:center;gap:8px}
+button.big .bi{font-size:15px;line-height:1}
+button.paused{background:var(--blue);border-color:#2c5269}
+button.paused:hover{background:#477b9d}
+button:disabled{opacity:.4;cursor:default;transform:none}
+.btnrow{display:flex;flex-wrap:wrap;gap:6px;margin:7px 0 2px}
+.note{font-size:11px;line-height:1.45;color:var(--ink-soft);margin:5px 0;font-style:italic}
+.mono-out{font-family:var(--mono);font-size:10.5px;line-height:1.5;color:var(--ink);
+  background:#f4eee1;border:1px solid var(--line);border-radius:3px;
+  padding:6px 8px;margin:5px 0;white-space:pre-wrap;word-break:break-word;
+  max-height:120px;overflow-y:auto}
+.mono-out:empty{display:none}
+.mono-out .k{color:var(--blue)}
+
+/* ── loss plot ── */
+#lossPlot{width:100%;background:#f4eee1;border:1px solid var(--line);border-radius:3px;
+  height:94px;display:none;margin:4px 0}
+#lossPlot.show{display:block}
+.swatchline{display:flex;gap:8px;align-items:center;font-family:var(--mono);font-size:10px;
+  color:var(--ink-soft);margin:2px 0;display:none}
+.swatchline.show{display:flex}
+.sw{display:inline-block;width:16px;height:3px;border-radius:2px;vertical-align:middle}
+
+/* ── phi charts ── */
+.chart-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--clay-deep);margin:8px 0 2px}
+.chart-wrap{background:#f4eee1;border:1px solid var(--line);border-radius:3px;overflow:hidden;margin:2px 0}
+.chart-wrap canvas{width:100%;display:block}
+
+/* ── metrics ── */
+.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;margin:6px 0}
+.metric-cell{background:#f4eee1;border:1px solid var(--line);border-radius:3px;padding:5px 7px}
+.metric-cell .mkey{font-family:var(--mono);font-size:9px;color:var(--ink-soft);letter-spacing:.1em;text-transform:uppercase}
+.metric-cell .mval{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--ink);margin-top:1px}
+.metric-cell .mval.good{color:var(--moss)}
+.metric-cell .mval.bad{color:var(--clay-deep)}
+
+/* ── top bar chips ── */
+.t-chip{display:inline-flex;align-items:center;justify-content:center;
+  min-width:32px;height:20px;border-radius:3px;padding:0 5px;flex:none;
+  font-family:var(--mono);font-size:9px;letter-spacing:.03em;
+  border:1.5px solid;cursor:default;transition:opacity .2s,box-shadow .2s;font-weight:700}
+.t-chip.pending{opacity:.3;filter:saturate(.2)}
+.t-chip.done{opacity:.7}
+.t-chip.current{opacity:1;box-shadow:0 0 0 2px rgba(0,0,0,.18)}
+.cls0{background:rgba(62,110,142,.15);border-color:var(--blue);color:var(--blue)}
+.cls1{background:rgba(185,142,62,.15);border-color:var(--ochre);color:var(--ochre)}
+.cls2{background:rgba(111,115,85,.15);border-color:var(--moss);color:var(--moss)}
+
+/* ── composer ── */
+.task-chip{display:flex;align-items:center;gap:5px;border-radius:3px;padding:4px 7px;
+  font-family:var(--mono);font-size:10px;border:1px solid transparent}
+.task-chip .chip-name{flex:1;font-weight:600}
+.task-chip .chip-ep{font-size:9px;color:var(--ink-soft)}
+.task-chip .chip-del{width:14px;height:14px;border:none;background:transparent;cursor:pointer;
+  color:var(--ink-soft);font-size:13px;line-height:1;padding:0;
+  display:flex;align-items:center;justify-content:center}
+.task-chip .chip-del:hover{color:var(--clay)}
+.preset-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin:6px 0}
+.preset-grid button{font-size:10.5px;padding:5px 6px;white-space:nowrap}
+.preset-grid button.active{background:var(--blue);border-color:#2c5269;color:#f7f1e4}
+.task-builder{background:#f4eee1;border:1px solid var(--line);border-radius:3px;
+  padding:7px 9px;margin:6px 0}
+.task-builder .row{margin:3px 0}
+.task-list{display:flex;flex-direction:column;gap:3px;margin:5px 0}
+
+/* ── snapshots ── */
+.snap-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin:6px 0}
+.snap-slot{background:#f4eee1;border:1px solid var(--line);border-radius:3px;
+  padding:5px 6px;font-family:var(--mono);font-size:10px;cursor:pointer;
+  min-height:42px;display:flex;flex-direction:column;gap:2px;transition:border-color .15s}
+.snap-slot:hover{border-color:var(--clay)}
+.snap-slot .sl{font-size:9px;color:var(--ink-soft)}
+.snap-slot .sn{font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.snap-slot.filled{border-color:var(--ochre)}
+.snap-slot .sdel{font-size:9px;color:var(--ink-soft);cursor:pointer;margin-top:auto}
+.snap-slot .sdel:hover{color:var(--clay)}
+
+/* ── status ── */
+#status{position:fixed;left:12px;bottom:12px;max-width:380px;z-index:5;
+  font-family:var(--mono);font-size:10px;color:var(--ink-soft);
+  background:var(--paper-2);border:1px solid var(--line);border-radius:3px;
+  padding:4px 8px;display:none;pointer-events:none}
+#status.show{display:block}
+#status.warn{color:var(--clay-deep)}
+</style>
+</head>
+<body>
+
+<!-- info drawer (full-height fixed) -->
+<aside id="infoPane" aria-hidden="true">
+  <div id="infoHead">
+    <h3 id="infoTitle"></h3>
+    <button id="infoClose" title="close (Esc)">&#x2715;</button>
+  </div>
+  <div id="infoBody"></div>
+</aside>
+
+<!-- 3D stage (canvas fills, topBar overlaid) -->
+<div id="stage">
+  <div id="topBar">
+    <div id="connDot" title="server"></div>
+    <span id="topBarLabel">no stream</span>
+    <div id="seqScroll"></div>
+    <div id="topProbeBadge"></div>
+  </div>
+  <div id="vignette"></div>
+</div>
+
+<!-- sidebar (full-height, above topBar) -->
+<aside id="side">
+  <div class="brand"><h2>Orbit<span>.</span></h2></div>
+
+  <!-- I. ABOUT -->
+  <section class="sec" id="secAbout">
+    <div class="sechead">
+      <span class="no">I</span><h3>About</h3>
+      <button class="ibtn" data-info="intro">i</button>
+      <span class="tick">&#x203a;</span>
+    </div>
+    <div class="secbody"><div class="secinner">
+      <p style="font-size:12px;line-height:1.6;margin-top:4px">
+        <b>PIAGETS</b> &#x2014; Parameter-Importance-weighted Attractor-Graph Embedding for Task Schematization.
+        A continual learning system maintaining a library of attractor schemas via a compact 24-dim
+        signature, deciding whether new time-series are <em>assimilated</em> into existing schemas
+        or <em>accommodated</em> as new ones.
+      </p>
+      <p style="font-size:12px;line-height:1.6">
+        <b>Quick start:</b> A 10-task stream loads automatically. Open <em>Model</em> and press &#x25b6; to begin.
+        Ground-truth attractors appear in orange as each task starts; model free-runs in blue every 20 epochs.
+      </p>
+    </div></div>
+  </section>
+
+  <!-- II. MODEL -->
+  <section class="sec" id="secModel">
+    <div class="sechead">
+      <span class="no">II</span><h3>Model</h3>
+      <button class="ibtn" data-info="alrnn">i</button>
+      <span class="tick">&#x203a;</span>
+    </div>
+    <div class="secbody"><div class="secinner">
+      <div class="btnrow" style="margin-top:6px">
+        <button id="trainBtn" class="big" disabled>
+          <span class="bi">&#x25b6;</span><span id="trainLabel">Train on sequence</span>
+        </button>
+      </div>
+      <div class="btnrow">
+        <button id="nextBtn" class="ghost" style="flex:1" disabled>Next task</button>
+        <button id="freerunBtn" class="ghost sm" disabled>Free-run</button>
+        <button id="resetBtn" class="ghost sm">Reset</button>
+      </div>
+      <canvas id="lossPlot"></canvas>
+      <div class="swatchline" id="lossLegend">
+        <span class="sw" style="background:var(--clay)"></span>recon
+        <span class="sw" style="background:var(--blue);margin-left:4px"></span>EWC
+      </div>
+      <div id="trainOut" class="mono-out"></div>
+    </div></div>
+  </section>
+
+  <!-- III. PIAGETS CONFIG -->
+  <section class="sec" id="secCfg">
+    <div class="sechead">
+      <span class="no">III</span><h3>PIAGETS Config</h3>
+      <button class="ibtn" data-info="config">i</button>
+      <span class="tick">&#x203a;</span>
+    </div>
+    <div class="secbody"><div class="secinner">
+      <div class="params">
+        <div class="p"><label>M (latent)</label><input id="cfgM" type="number" value="32" min="4" max="128"></div>
+        <div class="p"><label>P (ReLU)</label><input id="cfgP" type="number" value="12" min="1"></div>
+        <div class="p"><label>rank r</label><input id="cfgR" type="number" value="8" min="1"></div>
+        <div class="p"><label>epochs</label><input id="cfgEp" type="number" value="300" min="10" step="50"></div>
+      </div>
+      <label class="tgl"><input type="checkbox" id="useCL" checked><span class="tgl-sw"></span><span>CL regularisation</span></label>
+      <label class="tgl"><input type="checkbox" id="useMerge" checked><span class="tgl-sw"></span><span>SLAO merge <button class="ibtn" data-info="slao">i</button></span></label>
+      <label class="tgl"><input type="checkbox" id="useQR" checked><span class="tgl-sw"></span><span>QR init at boundary</span></label>
+      <div class="row">
+        <label>Fisher type <button class="ibtn" data-info="fisher">i</button></label>
+        <select id="fisherSel" style="width:auto">
+          <option value="sig">Signature-Fisher</option>
+          <option value="pred">Prediction-Fisher</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>&#x3bb;_EWC <button class="ibtn" data-info="ewc">i</button></label>
+        <input id="lamIn" type="range" min="0" max="20" step="0.5" value="5">
+        <span class="val" id="lamVal">5.0</span>
+      </div>
+      <label class="tgl"><input type="checkbox" id="adaptiveChk"><span class="tgl-sw"></span><span>Adaptive &#x3bb; <button class="ibtn" data-info="probe">i</button></span></label>
+      <div id="adaptiveExtra" style="display:none">
+        <div class="row"><label style="padding-left:10px">&#x3bb;_assim</label><input id="lamAssim" type="number" value="10" step="1" style="width:58px"></div>
+        <div class="row"><label style="padding-left:10px">&#x3bb;_accom</label><input id="lamAccom" type="number" value="2" step="0.5" style="width:58px"></div>
+      </div>
+      <div class="btnrow"><button id="applyCfgBtn" class="ghost">Apply config</button></div>
+      <div id="cfgOut" class="mono-out"></div>
+    </div></div>
+  </section>
+
+  <!-- IV. SCHEMA SPACE -->
+  <section class="sec" id="secPhi">
+    <div class="sechead">
+      <span class="no">IV</span><h3>Schema Space &#xb7; &#x3c6;</h3>
+      <button class="ibtn" data-info="phi">i</button>
+      <span class="tick">&#x203a;</span>
+    </div>
+    <div class="secbody"><div class="secinner">
+      <div class="chart-label">Current signature &#x3c6;(&#x3b8;)</div>
+      <div class="chart-wrap"><canvas id="phiChart" height="88"></canvas></div>
+      <div class="chart-label" style="margin-top:8px">&#x3c6; trajectory &#xb7; topo &amp; lyap</div>
+      <div class="chart-wrap"><canvas id="phiHist" height="60"></canvas></div>
+      <div class="btnrow">
+        <button id="getPhiBtn" class="ghost sm">Refresh &#x3c6;</button>
+        <button id="oracleBtn" class="ghost sm">Oracle &#x3c6;s</button>
+      </div>
+      <div id="phiOut" class="mono-out"></div>
+    </div></div>
+  </section>
+
+  <!-- V. METRICS -->
+  <section class="sec" id="secMetrics">
+    <div class="sechead">
+      <span class="no">V</span><h3>Metrics</h3>
+      <button class="ibtn" data-info="metrics">i</button>
+      <span class="tick">&#x203a;</span>
+    </div>
+    <div class="secbody"><div class="secinner">
+      <div class="metric-grid">
+        <div class="metric-cell"><div class="mkey">BWT</div><div class="mval" id="mBWT">&#x2014;</div></div>
+        <div class="metric-cell"><div class="mkey">FWT</div><div class="mval" id="mFWT">&#x2014;</div></div>
+        <div class="metric-cell"><div class="mkey">rec_ora</div><div class="mval" id="mRecOra">&#x2014;</div></div>
+        <div class="metric-cell"><div class="mkey">rec_cen</div><div class="mval" id="mRecCen">&#x2014;</div></div>
+        <div class="metric-cell"><div class="mkey">MSE</div><div class="mval" id="mMSE">&#x2014;</div></div>
+        <div class="metric-cell"><div class="mkey">regions</div><div class="mval" id="mNReg">&#x2014;</div></div>
+      </div>
+      <div class="btnrow"><button id="mseMatBtn" class="ghost sm">MSE matrix</button></div>
+      <div id="metricsOut" class="mono-out"></div>
+    </div></div>
+  </section>
+
+  <!-- VI. STREAM & CONNECTION -->
+  <section class="sec" id="secStream">
+    <div class="sechead">
+      <span class="no">VI</span><h3>Stream &amp; Connection</h3>
+      <button class="ibtn" data-info="stream">i</button>
+      <span class="tick">&#x203a;</span>
+    </div>
+    <div class="secbody"><div class="secinner">
+      <div class="note">Server: <code id="wsUrlLabel"></code></div>
+      <div class="preset-grid">
+        <button class="ghost" data-preset="standard_10">Standard 10</button>
+        <button class="ghost" data-preset="lorenz_ramp">Lorenz Ramp</button>
+        <button class="ghost" data-preset="class_alternating">Alternating</button>
+        <button class="ghost" data-preset="pathological">Pathological</button>
+      </div>
+      <div class="task-builder">
+        <div class="row">
+          <label>System</label>
+          <select id="sysSelect" style="width:auto;flex:1">
+            <option value="lorenz">Lorenz (chaos, cls 0)</option>
+            <option value="rossler">R&#xf6;ssler (chaos, cls 0)</option>
+            <option value="torus">Torus (quasi, cls 1)</option>
+            <option value="limit_cycle">Limit cycle (cls 2)</option>
+            <option value="van_der_pol">Van der Pol (relax, cls 2)</option>
+          </select>
+        </div>
+        <div class="row">
+          <label id="paramLabel">&#x3c1;</label>
+          <input id="paramIn" type="number" value="28" step="1" style="width:70px">
+          <label style="margin-left:6px">ep</label>
+          <input id="epochsIn" type="number" value="300" step="50" style="width:58px">
+        </div>
+        <div class="btnrow">
+          <button id="addTaskBtn" class="ghost sm">+ Add</button>
+          <button id="clearTasksBtn" class="ghost sm">Clear</button>
+          <button id="loadSeqBtn" class="blue sm" style="margin-left:auto">Load sequence</button>
+        </div>
+      </div>
+      <div id="taskList" class="task-list"></div>
+    </div></div>
+  </section>
+
+  <!-- VII. SNAPSHOTS -->
+  <section class="sec" id="secSnap">
+    <div class="sechead">
+      <span class="no">VII</span><h3>Snapshots</h3>
+      <span class="tick">&#x203a;</span>
+    </div>
+    <div class="secbody"><div class="secinner">
+      <div class="note">Save/restore model states.</div>
+      <div class="snap-grid" id="snapGrid"></div>
+      <div class="btnrow"><button id="snapBtn" class="ghost sm" disabled>Save snapshot</button></div>
+      <div id="snapOut" class="mono-out"></div>
+    </div></div>
+  </section>
+</aside>
+
+<div id="status"></div>
+
+<script>
+"use strict";
+
+/* ─── global error catcher (debug) ──────────────── */
+window.onerror=function(msg,src,line,col,err){
+  const d=document.createElement("div");
+  d.style.cssText="position:fixed;top:0;left:0;right:0;z-index:9999;background:#c0392b;color:#fff;font:12px monospace;padding:8px 14px;white-space:pre-wrap";
+  d.textContent="JS ERROR: "+msg+"\n"+src+":"+line+":"+col;
+  document.body.appendChild(d);
+};
+window.addEventListener("unhandledrejection",e=>{
+  window.onerror("Unhandled promise: "+(e.reason&&e.reason.message||e.reason),"",0,0,e.reason);
+});
+
+/* ─── constants ──────────────────────────────────── */
+const WS_URL = `ws://${location.hostname}:8765/ws`;
+const CLS_COLOR = {0:"#3e6e8e",1:"#b98e3e",2:"#6f7355"};
+// warm orange matching orbit.html
+const DATA_COLORS = ["#c87028","#d07820","#c86418","#d08030","#b86820"];
+const PHI_N = 24;
+
+el("wsUrlLabel").textContent = WS_URL;
+
+/* ─── state ──────────────────────────────────────── */
+let ws=null, wsReady=false;
+let _runAll=false, _trainActive=false;
+let _currentInfoKey=null;
+let _expectedDataTask=-1;
+let _lastDrawnTask=-1;   // which task's attractor is currently in the 3D scene
+
+const state={
+  stream:[],trained:new Set(),current:-1,
+  customTasks:[],phiHistory:[],lossData:[],
+  oraclePhis:null,taskMSEs:{},norms:{},snapshots:{},
+};
+
+/* ─── utils ──────────────────────────────────────── */
+function el(id){return document.getElementById(id);}
+function setStatus(msg,err){
+  const e=el("status");
+  e.textContent=msg; e.className="show"+(err?" warn":"");
+  clearTimeout(setStatus._t);
+  if(!err) setStatus._t=setTimeout(()=>e.className="",4000);
+}
+function logOut(id,msg,cls){
+  const e=el(id),d=document.createElement("div");
+  if(cls) d.className=cls;
+  d.textContent=msg; e.appendChild(d); e.scrollTop=e.scrollHeight;
+  while(e.childElementCount>40) e.removeChild(e.firstChild);
+}
+function clearOut(id){el(id).innerHTML="";}
+
+/* ─── xyz normalise ──────────────────────────────── */
+function normalizeXYZ(flat,n,id){
+  if(!state.norms[id]){
+    let mx=0; for(let i=0;i<flat.length;i++) mx=Math.max(mx,Math.abs(flat[i]));
+    state.norms[id]={scale:mx>0?20/mx:1};
+  }
+  const sc=state.norms[id].scale;
+  const out=new Float32Array(n*3);
+  for(let i=0;i<n*3&&i<flat.length;i++) out[i]=flat[i]*sc;
+  return out;
+}
+
+/* ─── THREE.JS scene ─────────────────────────────── */
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setClearColor(0x10151b,1);
+
+// Insert canvas as FIRST child of stage so vignette (z-index:2) and topBar (z-index:20)
+// paint on top of it. Position:absolute fills the stage via inset:0.
+const _cvs=renderer.domElement;
+_cvs.style.cssText="position:absolute;inset:0;display:block;touch-action:none;z-index:1;";
+el("stage").insertBefore(_cvs, el("stage").firstChild);
+
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(50,1,0.1,2000);
+camera.position.set(0,0,55);
+
+// Coordinate grid (floor, XZ plane) matching orbit.html aesthetic
+(function addGrid(){
+  const g=new THREE.GridHelper(80,20,0x2a4060,0x1a2a40);
+  g.material.opacity=0.45; g.material.transparent=true;
+  g.position.y=-22;
+  scene.add(g);
+  // second thinner grid at a tighter spacing for detail
+  const g2=new THREE.GridHelper(80,80,0x1a2840,0x1a2840);
+  g2.material.opacity=0.18; g2.material.transparent=true;
+  g2.position.y=-22;
+  scene.add(g2);
+})();
+
+let dataLine=null, modelLine=null;
+const MAX_PTS=5000;
+const prog={xyz:null,n:0,drawn:0,color:"#c87028",active:false};
+
+let lastInteract=0;
+function markInteract(){lastInteract=Date.now();}
+
+function resizeRenderer(){
+  const w=el("stage").clientWidth,h=el("stage").clientHeight;
+  if(!w||!h) return;
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+// Defer first resize so layout is fully computed before measuring dimensions
+requestAnimationFrame(()=>{
+  resizeRenderer();
+  new ResizeObserver(resizeRenderer).observe(el("stage"));
+});
+
+// ctrl: orbit state + inertia velocities (_vt=theta velocity, _vp=phi velocity)
+const ctrl={_down:false,_mx:0,_my:0,_btn:0,_theta:.3,_phi:1.2,_r:55,_tx:0,_ty:0,
+            _vt:0,_vp:0};
+const DAMP=0.88;  // inertia decay per frame (~18 frames to stop from full speed)
+
+function updateCamera(){
+  ctrl._phi=Math.max(.05,Math.min(Math.PI-.05,ctrl._phi));
+  camera.position.set(
+    ctrl._tx+ctrl._r*Math.sin(ctrl._phi)*Math.sin(ctrl._theta),
+    ctrl._ty+ctrl._r*Math.cos(ctrl._phi),
+    ctrl._r*Math.sin(ctrl._phi)*Math.cos(ctrl._theta));
+  camera.lookAt(new THREE.Vector3(ctrl._tx,ctrl._ty,0));
+}
+updateCamera();
+
+renderer.domElement.addEventListener("pointerdown",e=>{
+  markInteract();
+  ctrl._down=true; ctrl._mx=e.clientX; ctrl._my=e.clientY; ctrl._btn=e.button;
+  ctrl._vt=0; ctrl._vp=0;  // kill inertia when grabbing
+  renderer.domElement.setPointerCapture(e.pointerId);
+});
+renderer.domElement.addEventListener("pointerup",()=>{ctrl._down=false;});
+renderer.domElement.addEventListener("pointermove",e=>{
+  if(!ctrl._down) return; markInteract();
+  const dx=e.clientX-ctrl._mx, dy=e.clientY-ctrl._my;
+  ctrl._mx=e.clientX; ctrl._my=e.clientY;
+  if(ctrl._btn===2||e.shiftKey){
+    ctrl._tx-=dx*.04; ctrl._ty+=dy*.04;
+  } else {
+    // store per-event delta as velocity for inertia after release
+    ctrl._vt=-dx*.008; ctrl._vp=dy*.008;
+    ctrl._theta+=ctrl._vt;
+    ctrl._phi+=ctrl._vp;
+  }
+  updateCamera();
+});
+renderer.domElement.addEventListener("wheel",e=>{
+  markInteract();
+  ctrl._r=Math.max(2,Math.min(400,ctrl._r*Math.exp(e.deltaY*.001)));
+  updateCamera(); e.preventDefault();
+},{passive:false});
+renderer.domElement.addEventListener("contextmenu",e=>e.preventDefault());
+
+function buildLine(flat,n,col,opacity){
+  const geo=new THREE.BufferGeometry();
+  const pos=new Float32Array(n*3);
+  for(let i=0;i<n*3&&i<flat.length;i++) pos[i]=flat[i];
+  geo.setAttribute("position",new THREE.BufferAttribute(pos,3));
+  const mat=new THREE.LineBasicMaterial({color:new THREE.Color(col),opacity:opacity||1,transparent:(opacity||1)<1});
+  return new THREE.Line(geo,mat);
+}
+function showDataLine(flat,n,col){
+  if(dataLine){scene.remove(dataLine);dataLine.geometry.dispose();}
+  const sub=Math.min(n,MAX_PTS),stride=Math.max(1,Math.floor(n/sub));
+  const pts=[];
+  for(let i=0;i<n;i+=stride) pts.push(flat[i*3],flat[i*3+1],flat[i*3+2]);
+  // fully opaque warm orange, no transparency
+  dataLine=buildLine(pts,pts.length/3,col,1);
+  scene.add(dataLine);
+}
+function showModelLine(flat,n,col){
+  if(modelLine){scene.remove(modelLine);modelLine.geometry.dispose();}
+  const sub=Math.min(n,MAX_PTS),stride=Math.max(1,Math.floor(n/sub));
+  const pts=[];
+  for(let i=0;i<n;i+=stride) pts.push(flat[i*3],flat[i*3+1],flat[i*3+2]);
+  // light blue model trajectories, slightly transparent
+  modelLine=buildLine(pts,pts.length/3,col||"#7ab8d4",0.8);
+  scene.add(modelLine);
+}
+function startProgressive(xyz,n,col){
+  prog.xyz=xyz; prog.n=n; prog.drawn=0; prog.color=col; prog.active=true;
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  // progressive trajectory draw
+  if(prog.active&&prog.drawn<prog.n){
+    prog.drawn=Math.min(prog.drawn+100,prog.n);
+    showDataLine(prog.xyz,prog.drawn,prog.color);
+    if(prog.drawn>=prog.n) prog.active=false;
+  }
+  // inertia: continue rotating after drag release, decay to zero
+  if(!ctrl._down&&(Math.abs(ctrl._vt)>0.0001||Math.abs(ctrl._vp)>0.0001)){
+    ctrl._theta+=ctrl._vt; ctrl._phi+=ctrl._vp;
+    ctrl._vt*=DAMP; ctrl._vp*=DAMP;
+    updateCamera();
+  } else if(!ctrl._down&&Date.now()-lastInteract>5000){
+    // gentle auto-rotate when idle for >5s
+    ctrl._theta+=0.0018; updateCamera();
+  }
+  renderer.render(scene,camera);
+}
+animate();
+
+/* ─── loss chart with log-scale axes ─────────────── */
+function drawLoss(){
+  const cvs=el("lossPlot"),ctx=cvs.getContext("2d");
+  const W=cvs.offsetWidth||320,H=94;
+  cvs.width=W; cvs.height=H;
+  if(!state.lossData.length) return;
+  const PL=34,PB=18,PT=4,PR=6;
+  const pw=W-PL-PR,ph=H-PT-PB;
+  const recons=state.lossData.map(d=>d.recon).filter(v=>v>0);
+  if(!recons.length) return;
+  const ewcs=state.lossData.map(d=>d.ewc);
+  const allPos=[...recons,...ewcs.filter(v=>v>0)];
+  const logMax=Math.log10(Math.max(...allPos));
+  const logMin=Math.log10(Math.min(...recons))-0.3;
+  const logR=logMax-logMin||1;
+  function lv(v){return v>0?Math.log10(v):logMin;}
+  function px_(i){return PL+(i/(state.lossData.length-1||1))*pw;}
+  function py_(v){return H-PB-(lv(v)-logMin)/logR*ph;}
+  ctx.clearRect(0,0,W,H);
+  ctx.font="8px ui-monospace,monospace";
+  // y grid & labels
+  ctx.textAlign="right"; ctx.fillStyle="#5a5246";
+  for(let k=0;k<=3;k++){
+    const lv_=logMin+k/3*logR, y=H-PB-k/3*ph;
+    ctx.strokeStyle="#c5b89f33"; ctx.lineWidth=.7;
+    ctx.beginPath();ctx.moveTo(PL,y);ctx.lineTo(W-PR,y);ctx.stroke();
+    const label=Math.pow(10,lv_);
+    ctx.fillText(label<.01?"<0.01":label.toExponential(0),PL-2,y+3);
+  }
+  // x grid & labels every 100 ep
+  ctx.textAlign="center"; ctx.fillStyle="#5a5246";
+  const nEp=state.lossData.length, xInt=100;
+  for(let ep=0;ep<=nEp;ep+=xInt){
+    const x=PL+(ep/(nEp-1||1))*pw;
+    ctx.fillText(ep,x,H-2);
+    ctx.strokeStyle="#c5b89f33"; ctx.lineWidth=.6;
+    ctx.beginPath();ctx.moveTo(x,PT);ctx.lineTo(x,H-PB);ctx.stroke();
+  }
+  // axis labels
+  ctx.save();ctx.translate(8,H/2);ctx.rotate(-Math.PI/2);
+  ctx.textAlign="center";ctx.fillText("loss",0,0);ctx.restore();
+  ctx.textAlign="center";ctx.fillText("ep",PL+pw/2,H-PB+10);
+  // draw lines
+  function drawLine(arr,col){
+    ctx.beginPath();ctx.strokeStyle=col;ctx.lineWidth=1.5;
+    arr.forEach((v,i)=>{
+      if(v<=0) return;
+      const x=px_(i),y=py_(v);
+      i===0||arr[i-1]<=0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    });ctx.stroke();
+  }
+  drawLine(state.lossData.map(d=>d.recon),"#b65d3a");
+  if(ewcs.some(v=>v>1e-10)) drawLine(ewcs,"#3e6e8e");
+}
+
+/* ─── phi charts ─────────────────────────────────── */
+const PHI_GROUPS=[
+  {name:"eigen",count:10,color:"#3e6e8e"},
+  {name:"act_μ",count:6,color:"#b98e3e"},
+  {name:"act_σ",count:6,color:"#6f7355"},
+  {name:"topo",count:1,color:"#b65d3a"},
+  {name:"lyap",count:1,color:"#241f19"},
+];
+function drawPhi(phi){
+  const cvs=el("phiChart"),ctx=cvs.getContext("2d");
+  const W=cvs.offsetWidth||320,H=88;
+  cvs.width=W; cvs.height=H;
+  const bw=W/PHI_N,pad=1.5;
+  let mx=0; phi.forEach(v=>mx=Math.max(mx,Math.abs(v))); if(mx<1e-8)mx=1;
+  let gi=0,goff=0;
+  for(let i=0;i<PHI_N;i++){
+    while(gi<PHI_GROUPS.length-1&&goff>=PHI_GROUPS[gi].count){goff=0;gi++;}
+    const v=phi[i],frac=v/mx,col=PHI_GROUPS[gi].color;
+    const x=i*bw+pad,bh=Math.abs(frac)*(H-16);
+    ctx.fillStyle=col+"44";ctx.fillRect(x,H-14-bh,bw-pad*2,bh);
+    ctx.fillStyle=col;ctx.fillRect(x,H-14-(frac>0?2:0),bw-pad*2,2);
+    goff++;
+  }
+  ctx.font="8px ui-monospace,monospace";
+  let off=0;
+  PHI_GROUPS.forEach(g=>{
+    ctx.fillStyle=g.color;
+    const cx=(off+g.count/2)*bw;
+    ctx.fillText(g.name,cx-ctx.measureText(g.name).width/2,H-1);
+    off+=g.count;
+  });
+}
+function drawPhiHistory(){
+  const cvs=el("phiHist"),ctx=cvs.getContext("2d");
+  const W=cvs.offsetWidth||320,H=60;
+  cvs.width=W; cvs.height=H;
+  const hist=state.phiHistory.filter(h=>h.t>=0);
+  if(hist.length<2) return;
+  const pad=6;
+  const series=[{idx:22,color:"#b65d3a",label:"topo"},{idx:23,color:"#3e6e8e",label:"lyap"}];
+  const vals=series.map(s=>hist.map(h=>h.phi[s.idx]));
+  const allV=vals.flat(),mn=Math.min(...allV),mx=Math.max(...allV),rng=mx-mn||1;
+  function py(v){return H-pad-(v-mn)/rng*(H-2*pad);}
+  ctx.clearRect(0,0,W,H);
+  series.forEach((s,si)=>{
+    ctx.beginPath();ctx.strokeStyle=s.color;ctx.lineWidth=1.5;
+    vals[si].forEach((v,i)=>{
+      const x=pad+(i/(hist.length-1||1))*(W-2*pad);
+      i===0?ctx.moveTo(x,py(v)):ctx.lineTo(x,py(v));
+    });ctx.stroke();
+    vals[si].forEach((v,i)=>{
+      const task=state.stream[hist[i].t];
+      ctx.beginPath();ctx.arc(pad+(i/(hist.length-1||1))*(W-2*pad),py(v),3,0,Math.PI*2);
+      ctx.fillStyle=task?CLS_COLOR[task.cls]:"#888";ctx.fill();
+    });
+  });
+  ctx.font="8px ui-monospace,monospace";
+  ctx.fillStyle="#b65d3a";ctx.fillText("topo",3,9);
+  ctx.fillStyle="#3e6e8e";ctx.fillText("lyap",3,19);
+}
+
+/* ─── top bar ────────────────────────────────────── */
+function renderTopBar(){
+  const scroll=el("seqScroll"); scroll.innerHTML="";
+  if(!state.stream.length){el("topBarLabel").textContent="no stream";return;}
+  el("topBarLabel").textContent=state.stream.length+" tasks";
+  state.stream.forEach((t,i)=>{
+    const chip=document.createElement("div");
+    chip.className="t-chip cls"+t.cls;
+    if(state.trained.has(i)) chip.classList.add("done");
+    else if(i===state.current) chip.classList.add("current");
+    else chip.classList.add("pending");
+    chip.textContent=t.name; chip.title=t.name+" \xb7 cls "+t.cls+" \xb7 "+t.epochs+"ep";
+    scroll.appendChild(chip);
+  });
+  const cur=scroll.querySelectorAll(".t-chip")[state.current];
+  if(cur) cur.scrollIntoView({inline:"nearest",block:"nearest"});
+}
+
+/* ─── accordion (JS height) ──────────────────────── */
+function measureHeight(sec){
+  // temporarily force visibility to measure
+  const body=sec.querySelector(".secbody");
+  const inner=sec.querySelector(".secinner");
+  body.style.height="auto";
+  const h=inner.scrollHeight;
+  body.style.height=sec.classList.contains("open")?h+"px":"0";
+  return h;
+}
+function openSec(sec){
+  document.querySelectorAll(".sec").forEach(s=>{
+    if(s!==sec){
+      s.classList.remove("open");
+      s.querySelector(".secbody").style.height="0";
+      s.querySelector(".tick").style.transform="";
+    }
+  });
+  sec.classList.add("open");
+  const inner=sec.querySelector(".secinner");
+  sec.querySelector(".secbody").style.height=inner.scrollHeight+"px";
+  sec.querySelector(".tick").style.transform="rotate(90deg)";
+}
+function closeSec(sec){
+  sec.classList.remove("open");
+  sec.querySelector(".secbody").style.height="0";
+  sec.querySelector(".tick").style.transform="";
+}
+document.querySelectorAll(".sechead").forEach(h=>{
+  h.addEventListener("click",e=>{
+    if(e.target.classList.contains("ibtn")) return;
+    const sec=h.closest(".sec");
+    if(sec.classList.contains("open")) closeSec(sec);
+    else openSec(sec);
+  });
+});
+// open About by default after DOM is ready
+setTimeout(()=>openSec(el("secAbout")),0);
+
+/* ─── snapshots ──────────────────────────────────── */
+function renderSnapGrid(){
+  const g=el("snapGrid"); g.innerHTML="";
+  for(let s=0;s<6;s++){
+    const snap=state.snapshots[s];
+    const slot=document.createElement("div");
+    slot.className="snap-slot"+(snap?" filled":"");
+    if(snap){
+      slot.innerHTML='<span class="sl">slot '+s+'</span><span class="sn" title="'+snap.label+'">'+snap.label+'</span><span class="sdel" data-slot="'+s+'">restore ↩</span>';
+      slot.querySelector(".sdel").addEventListener("click",e=>{
+        e.stopPropagation(); wsSend({op:"load_snapshot",slot:s});
+      });
+    } else {
+      slot.innerHTML='<span class="sl">slot '+s+'</span><span style="font-size:9px;color:var(--line)">empty</span>';
+    }
+    g.appendChild(slot);
+  }
+}
+renderSnapGrid();
+el("snapBtn").addEventListener("click",()=>{
+  if(!wsReady) return;
+  const slot=Object.keys(state.snapshots).length%6;
+  const label=state.current>=0&&state.stream[state.current]?state.stream[state.current].name:"t"+state.current;
+  wsSend({op:"snapshot",slot,label});
+});
+
+/* ─── stream composer ────────────────────────────── */
+const PARAM_META={
+  lorenz:{label:"ρ",default:28,step:1},
+  rossler:{label:"c",default:5.7,step:.1},
+  torus:{label:"ω₂",default:.382,step:.001},
+  limit_cycle:{label:"ω",default:1.0,step:.1},
+  van_der_pol:{label:"μ",default:2.5,step:.5},
+};
+const SYS_CLS={lorenz:0,rossler:0,torus:1,limit_cycle:2,van_der_pol:2};
+function tName(sys,param){
+  const p=+param;
+  if(sys==="lorenz") return "Lor_r"+p.toFixed(0);
+  if(sys==="rossler") return "Ros_c"+p.toFixed(1);
+  if(sys==="torus") return "Tor_"+p.toFixed(3);
+  if(sys==="limit_cycle") return "LC_w"+p.toFixed(2);
+  return "VdP_m"+p.toFixed(1);
+}
+function updateParamLabel(){
+  const sys=el("sysSelect").value,m=PARAM_META[sys]||{label:"param",default:1,step:.1};
+  el("paramLabel").textContent=m.label;
+  el("paramIn").value=m.default; el("paramIn").step=m.step;
+}
+el("sysSelect").addEventListener("change",updateParamLabel);
+updateParamLabel();
+
+function renderTaskList(){
+  const e=el("taskList"); e.innerHTML="";
+  state.customTasks.forEach((t,i)=>{
+    const cls=SYS_CLS[t.system]??0;
+    const chip=document.createElement("div");
+    chip.className="task-chip cls"+cls;
+    chip.style.cssText="background:"+CLS_COLOR[cls]+"18;border-color:"+CLS_COLOR[cls];
+    chip.innerHTML='<span class="chip-name">'+t.name+'</span><span class="chip-ep">'+t.epochs+'ep</span><button class="chip-del" data-i="'+i+'">\xd7</button>';
+    e.appendChild(chip);
+  });
+  e.querySelectorAll(".chip-del").forEach(b=>b.addEventListener("click",()=>{
+    state.customTasks.splice(+b.dataset.i,1); renderTaskList();
+  }));
+}
+el("addTaskBtn").addEventListener("click",()=>{
+  const sys=el("sysSelect").value,param=parseFloat(el("paramIn").value),epochs=parseInt(el("epochsIn").value)||300;
+  state.customTasks.push({system:sys,param,epochs,name:tName(sys,param),cls:SYS_CLS[sys]??0});
+  renderTaskList();
+});
+el("clearTasksBtn").addEventListener("click",()=>{
+  state.customTasks=[];renderTaskList();
+  document.querySelectorAll(".preset-grid button").forEach(b=>b.classList.remove("active"));
+});
+document.querySelectorAll(".preset-grid button[data-preset]").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    if(!wsReady){setStatus("Not connected",true);return;}
+    document.querySelectorAll(".preset-grid button").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    state.customTasks=[]; renderTaskList();
+    wsSend({op:"set_stream",preset:btn.dataset.preset});
+  });
+});
+el("loadSeqBtn").addEventListener("click",()=>{
+  if(!wsReady){setStatus("Not connected",true);return;}
+  if(!state.customTasks.length){setStatus("Add at least one task",true);return;}
+  document.querySelectorAll(".preset-grid button").forEach(b=>b.classList.remove("active"));
+  wsSend({op:"set_custom_stream",tasks:state.customTasks.map(t=>({system:t.system,param:t.param,epochs:t.epochs}))});
+});
+
+/* ─── websocket ──────────────────────────────────── */
+function wsSend(obj){if(ws&&ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify(obj));}
+function wsConnect(){
+  if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING)) return;
+  ws=new WebSocket(WS_URL);
+  ws.onopen=()=>{
+    wsReady=true; el("connDot").className="ok"; setStatus("Connected");
+    sendInit();
+    wsSend({op:"set_stream",preset:"standard_10"});
+    document.querySelector('[data-preset="standard_10"]').classList.add("active");
+  };
+  ws.onclose=()=>{
+    wsReady=false; el("connDot").className="err";
+    setStatus("Disconnected — retrying…",true); setTimeout(wsConnect,3000);
+  };
+  ws.onerror=()=>setStatus("WS error",true);
+  ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data));}catch(err){console.error(err);}};
+}
+function sendInit(){
+  wsSend({op:"init",
+    M:parseInt(el("cfgM").value)||32,
+    P:parseInt(el("cfgP").value)||12,
+    rank:parseInt(el("cfgR").value)||8,
+    lam:parseFloat(el("lamIn").value)||5});
+  sendCLConfig();
+}
+function sendCLConfig(){
+  wsSend({op:"set_cl",
+    use_cl:el("useCL").checked,use_merge:el("useMerge").checked,use_qr:el("useQR").checked,
+    fisher:el("fisherSel").value,adaptive:el("adaptiveChk").checked,
+    lam:parseFloat(el("lamIn").value)||5,
+    lam_assim:parseFloat(el("lamAssim").value)||10,
+    lam_accom:parseFloat(el("lamAccom").value)||2,
+    assim_ratio:10});
+}
+
+/* ─── train button state machine ─────────────────── */
+function setTrainState(s){
+  const btn=el("trainBtn"),lbl=el("trainLabel"),bi=btn.querySelector(".bi");
+  if(s==="idle"){
+    bi.textContent="▶"; lbl.textContent="Train on sequence";
+    btn.classList.remove("paused"); _runAll=false; _trainActive=false;
+  } else if(s==="training"){
+    bi.textContent="⏸"; lbl.textContent="Pause";
+    btn.classList.remove("paused"); _runAll=true;
+  } else if(s==="paused"){
+    bi.textContent="▶"; lbl.textContent="Resume";
+    btn.classList.add("paused"); _runAll=false;
+  }
+}
+
+/* ─── message handler ────────────────────────────── */
+function handleMsg(msg){
+  switch(msg.type){
+
+    case "ready":
+      setStatus("Ready \xb7 M="+msg.M+" P="+msg.P+" r="+msg.rank+" \xb7 "+msg.device);
+      el("trainBtn").disabled=!state.stream.length;
+      el("nextBtn").disabled=!state.stream.length;
+      logOut("cfgOut","ready M="+msg.M+" P="+msg.P+" r="+msg.rank+" "+msg.device,"k");
+      break;
+
+    case "stream_info":
+      state.stream=msg.tasks;
+      state.trained.clear(); state.current=0;
+      state.phiHistory=[]; state.norms={}; state.taskMSEs={};
+      _lastDrawnTask=-1;
+      renderTopBar();
+      el("trainBtn").disabled=false; el("nextBtn").disabled=false;
+      el("freerunBtn").disabled=false; el("snapBtn").disabled=false;
+      if(dataLine){scene.remove(dataLine);dataLine=null;}
+      if(modelLine){scene.remove(modelLine);modelLine=null;}
+      clearOut("trainOut"); clearMetrics(); clearOut("phiOut");
+      drawPhi(new Array(PHI_N).fill(0));
+      setStatus("Stream: "+msg.tasks.length+" tasks");
+      setTrainState("idle");
+      // Server bundles task-0 data — draw immediately, no round-trip needed
+      if(msg.xyz&&msg.xyz.length){
+        const n=msg.xyz.length/3;
+        const col=DATA_COLORS[0];
+        _lastDrawnTask=0;
+        startProgressive(normalizeXYZ(msg.xyz,n,0),n,col);
+      }
+      break;
+
+    case "advance":
+      state.current=msg.task_idx;
+      renderTopBar();
+      // only redraw ground-truth if the task actually changed
+      if(msg.xyz && msg.task_idx!==_lastDrawnTask){
+        _lastDrawnTask=msg.task_idx;
+        const n=msg.xyz.length/3;
+        const col=DATA_COLORS[msg.task_idx%DATA_COLORS.length];
+        startProgressive(normalizeXYZ(msg.xyz,n,msg.task_idx),n,col);
+      }
+      break;
+
+    case "probe":{
+      const pb=el("topProbeBadge");
+      pb.style.display="inline-block";
+      pb.className=msg.mode==="assim"?"assim":"accom";
+      pb.textContent=(msg.mode==="assim"?"ASSIMILATION":"ACCOMMODATION")+" \u03bb="+msg.lam.toFixed(1);
+      logOut("trainOut","[probe] "+msg.task+": "+msg.mode+" \u03bb="+msg.lam.toFixed(1),"k");
+      break;
+    }
+
+    case "progress":
+      state.lossData.push({recon:msg.recon,ewc:msg.ewc});
+      el("lossPlot").classList.add("show"); el("lossLegend").classList.add("show");
+      if(state.lossData.length%5===0) drawLoss();
+      setStatus("ep "+msg.ep+"/"+msg.total+"  loss="+msg.recon.toExponential(2));
+      break;
+
+    case "freerun_preview":{
+      const n=msg.xyz.length/3;
+      showModelLine(normalizeXYZ(msg.xyz,n,state.current),n,"#6fa3c7");
+      break;
+    }
+
+    case "freerun":{
+      const n=msg.xyz.length/3;
+      showModelLine(normalizeXYZ(msg.xyz,n,state.current),n,"#6fa3c7");
+      el("mNReg").textContent=msg.n_regions;
+      break;
+    }
+
+    case "task_done":{
+      const t=msg.t;
+      _trainActive=false;
+      state.trained.add(t); state.current=t; state.taskMSEs[t]=msg.mse;
+      renderTopBar(); drawLoss();
+      state.phiHistory.push({t,phi:msg.phi,name:msg.name});
+      drawPhi(msg.phi); drawPhiHistory();
+      const n=msg.xyz.length/3;
+      showModelLine(normalizeXYZ(msg.xyz,n,t),n,"#6fa3c7");
+      el("mMSE").textContent=msg.mse.toExponential(3);
+      el("mMSE").className="mval"+(msg.mse<.1?" good":msg.mse>1?" bad":"");
+      el("mNReg").textContent=msg.n_regions;
+      logOut("trainOut","[t"+t+"] "+msg.name+"  mse="+msg.mse.toExponential(3)+"  regions="+msg.n_regions,"k");
+      setStatus("Task "+t+" done: "+msg.name);
+      if(_runAll){
+        const hasMore=state.stream.some((_,i)=>!state.trained.has(i));
+        if(hasMore){_trainActive=true; setTimeout(()=>wsSend({op:"next"}),150);}
+        else{setTrainState("idle"); setStatus("All tasks complete");}
+      } else {
+        setTrainState("paused");
+      }
+      break;
+    }
+
+    case "data":
+      // guard against stale responses from earlier get_data calls
+      if(msg.task_idx!==_expectedDataTask) break;
+      {
+        const n=msg.xyz.length/3;
+        const col=DATA_COLORS[msg.task_idx%DATA_COLORS.length];
+        startProgressive(normalizeXYZ(msg.xyz,n,msg.task_idx),n,col);
+      }
+      break;
+
+    case "phi":
+      drawPhi(msg.phi);
+      state.phiHistory.push({t:state.current,phi:msg.phi,name:"manual"});
+      drawPhiHistory();
+      if(msg.groups) logOut("phiOut","topo="+msg.groups.topo[0].toFixed(4)+"  lyap="+msg.groups.lyap[0].toFixed(4),"k");
+      break;
+
+    case "oracle_phis":
+      state.oraclePhis=msg; computeRecMetrics();
+      logOut("phiOut","Oracle φs: "+msg.phis.length+" tasks","k");
+      break;
+
+    case "mse_matrix":{
+      const lines=["current vs tasks:"];
+      msg.current.forEach(e=>lines.push("  t"+e.task_idx+" "+e.name+": "+e.mse.toExponential(3)));
+      el("metricsOut").textContent=lines.join("\n");
+      break;
+    }
+
+    case "snapshot_saved":
+      state.snapshots[msg.slot]={label:msg.label};
+      renderSnapGrid(); logOut("snapOut","slot "+msg.slot+": "+msg.label,"k");
+      break;
+
+    case "cl_updated":
+      logOut("cfgOut","CL updated: use_cl="+msg.use_cl+" \u03bb="+msg.lam,"k");
+      break;
+
+    case "reset_ok":
+      state.trained.clear(); state.current=msg.task_idx;
+      state.lossData=[]; state.phiHistory=[]; state.norms={};
+      el("lossPlot").classList.remove("show"); el("lossLegend").classList.remove("show");
+      if(dataLine){scene.remove(dataLine);dataLine=null;}
+      if(modelLine){scene.remove(modelLine);modelLine=null;}
+      el("topProbeBadge").style.display="none";
+      clearMetrics(); renderTopBar(); clearOut("trainOut");
+      drawPhi(new Array(PHI_N).fill(0));
+      setTrainState("idle"); setStatus("Model reset");
+      if(state.stream.length){_expectedDataTask=0; wsSend({op:"get_data",task_idx:0});}
+      break;
+
+    case "status":
+      setStatus(msg.msg,msg.level==="error"||msg.level==="warn"); break;
+    case "error":
+      setStatus("Error: "+msg.msg,true); break;
+  }
+}
+
+/* ─── metrics ────────────────────────────────────── */
+function clearMetrics(){
+  ["mBWT","mFWT","mRecOra","mRecCen","mMSE","mNReg"].forEach(id=>{
+    el(id).textContent="—"; el(id).className="mval";
+  });
+}
+function computeRecMetrics(){
+  if(!state.oraclePhis||!state.phiHistory.length) return;
+  const phis=state.oraclePhis.phis;
+  let cor=0,tot=0;
+  state.phiHistory.forEach(h=>{
+    if(h.name==="manual"||h.t<0) return;
+    const truth=state.stream[h.t]?.cls; if(truth===undefined) return;
+    let best=Infinity,bestCls=-1;
+    phis.forEach(op=>{const d=l2sq(h.phi,op.phi);if(d<best){best=d;bestCls=op.cls;}});
+    if(bestCls===truth) cor++;
+    tot++;
+  });
+  if(tot>0) el("mRecOra").textContent=(cor/tot).toFixed(2);
+}
+function l2sq(a,b){let s=0;for(let i=0;i<a.length;i++) s+=(a[i]-b[i])**2;return s;}
+
+/* ─── control buttons ────────────────────────────── */
+el("trainBtn").addEventListener("click",()=>{
+  if(!wsReady||!state.stream.length) return;
+  if(!_runAll&&!_trainActive){
+    // start or resume
+    setTrainState("training");
+    state.lossData=[];
+    openSec(el("secModel"));
+    _trainActive=true;
+    wsSend({op:"next"});
+  } else if(_runAll){
+    // pause after current task
+    setTrainState("paused");
+  } else {
+    // task finished while paused — resume
+    setTrainState("training");
+    _trainActive=true;
+    wsSend({op:"next"});
+  }
+});
+el("nextBtn").addEventListener("click",()=>{
+  if(!wsReady) return;
+  _runAll=false; setTrainState("idle");
+  state.lossData=[]; openSec(el("secModel"));
+  _trainActive=true; wsSend({op:"next"});
+});
+el("freerunBtn").addEventListener("click",()=>{if(wsReady) wsSend({op:"freerun",steps:3000});});
+el("resetBtn").addEventListener("click",()=>{
+  _runAll=false; _trainActive=false; setTrainState("idle");
+  wsSend({op:"reset"});
+});
+el("applyCfgBtn").addEventListener("click",()=>{
+  if(!wsReady) return; sendCLConfig();
+  logOut("cfgOut","Config applied","k");
+});
+el("lamIn").addEventListener("input",()=>{el("lamVal").textContent=parseFloat(el("lamIn").value).toFixed(1);});
+el("adaptiveChk").addEventListener("change",()=>{
+  el("adaptiveExtra").style.display=el("adaptiveChk").checked?"block":"none";
+});
+el("getPhiBtn").addEventListener("click",()=>{if(wsReady) wsSend({op:"get_phi"});});
+el("oracleBtn").addEventListener("click",()=>{
+  if(!wsReady) return; setStatus("Computing oracle φs…"); wsSend({op:"get_oracle_phis"});
+});
+el("mseMatBtn").addEventListener("click",()=>{
+  if(!wsReady) return; clearOut("metricsOut"); wsSend({op:"get_mse_matrix"});
+});
+
+/* ─── info pane ──────────────────────────────────── */
+let _katexLoaded=false,_katexCbs=[];
+function ensureKatex(cb){
+  if(_katexLoaded){cb();return;}
+  _katexCbs.push(cb); if(_katexCbs.length>1) return;
+  const css=document.createElement("link");
+  css.rel="stylesheet";
+  css.href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css";
+  document.head.appendChild(css);
+  const sc=document.createElement("script");
+  sc.src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js";
+  sc.onload=()=>{
+    const ar=document.createElement("script");
+    ar.src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js";
+    ar.onload=()=>{_katexLoaded=true;_katexCbs.forEach(f=>f());_katexCbs=[];};
+    document.head.appendChild(ar);
+  };
+  document.head.appendChild(sc);
+}
+function renderMath(){
+  if(typeof renderMathInElement==="undefined") return;
+  renderMathInElement(el("infoBody"),{
+    delimiters:[{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false}],
+    throwOnError:false});
+}
+
+// String.raw prevents JS escape processing of \theta, \frac, \partial, etc.
+const R=String.raw;
+
+const INFO={
+  intro:["PIAGETS — Overview",R`
+<h4>What is PIAGETS?</h4>
+<p><b>PIAGETS</b> &#x2014; <em>Parameter-Importance-weighted Attractor-Graph Embedding for Task Schematization</em> &#x2014; is a continual learning framework for <em>dynamical systems reconstruction</em> (DSR). Given a stream of time-series from different chaotic or periodic attractors, the learner must reconstruct each system without catastrophically forgetting prior ones.</p>
+<ul>
+<li><b>Assimilation</b>: new experience fits an existing schema &#x2014; reinforce it</li>
+<li><b>Accommodation</b>: new experience does not fit &#x2014; build a new schema</li>
+</ul>
+
+<h4>Core challenge</h4>
+<p>Standard EWC uses the prediction Fisher $F_i^{\text{pred}} = \mathbb{E}[(\partial \log p / \partial \theta_i)^2]$. For chaotic attractors this is numerically explosive: $\|\partial \hat{x}_t / \partial \theta_i\| \sim e^{\lambda_{\max} t}$ where $\lambda_{\max} > 0$ is the Lyapunov exponent. PIAGETS replaces it with the <em>Signature-Fisher</em> $F_i^\Phi = \|\partial\phi(\theta)/\partial\theta_i\|^2$ where $\phi$ is a stable, ergodic attractor signature.</p>
+
+<h4>Pipeline</h4>
+<ol style="padding-left:16px;line-height:2">
+<li>Train AL-RNN on task $t$ with EWC penalty weighted by $F_i^\Phi$ from task $t-1$</li>
+<li>Compute $\phi(\theta_t)$ &#x2014; 24-dim differentiable attractor signature</li>
+<li>SLAO: QR-orthogonalize $W_A$, Fisher-weighted EMA of $W_B$ (merge before forget)</li>
+<li>Schema probe: compare $\phi$ to class centroids &#x2192; choose $\lambda$ for next task</li>
+</ol>`],
+
+  alrnn:["AL-RNN Architecture",R`
+<h4>Dynamics</h4>
+<p>The Almost-Linear RNN is a piecewise-linear state-space model:</p>
+$$z_{t+1} = \operatorname{diag}(a)\,z_t + W_B W_A\,g(z_t) + h$$
+<p>$z_t \in \mathbb{R}^M$ is the latent state; readout $\hat{x}_t = z_t[1{:}d]$. The nonlinearity $g$ applies ReLU to the first $P$ of $M$ units:</p>
+$$g(z)_i = \begin{cases}\max(0,z_i) & i \leq P \\ 0 & i > P\end{cases}$$
+<p>This creates up to $2^P$ linear regions, each with Jacobian $J_r = \operatorname{diag}(a) + W_B W_A \operatorname{diag}(\mathbf{1}_r)$.</p>
+
+<h4>LoRA factorisation</h4>
+<p>The coupling $W = W_B W_A$ with $W_B \in \mathbb{R}^{M \times r}$, $W_A \in \mathbb{R}^{r \times M}$, rank $r \ll M$. During continual learning $W_B$ accumulates task knowledge via Fisher-weighted EMA; $W_A$ is periodically QR-orthogonalized.</p>
+
+<h4>GTF-BPTT</h4>
+<p>Training uses Generalised Teacher Forcing: input at each step is $\alpha x_t + (1-\alpha)\hat{z}_t$ with $\alpha$ annealed $0.5 \to 0.05$ over training, preventing gradient explosion while encouraging autonomous generation.</p>
+
+<h4>Default hyperparameters</h4>
+<table>
+<tr><th>Param</th><th>Value</th><th>Meaning</th></tr>
+<tr><td>M</td><td>32</td><td>Total latent dimension</td></tr>
+<tr><td>P</td><td>12</td><td>ReLU units; up to $2^{12}$ linear regions</td></tr>
+<tr><td>r</td><td>8</td><td>LoRA rank of $W = W_B W_A$</td></tr>
+<tr><td>lr</td><td>3e-3</td><td>Adam learning rate</td></tr>
+<tr><td>seq_len</td><td>80</td><td>BPTT truncation length</td></tr>
+<tr><td>batch</td><td>64</td><td>Sequences per gradient step</td></tr>
+</table>`],
+
+  slao:["SLAO — Merge before Forget",R`
+<h4>Motivation</h4>
+<p>The factored weights $W = W_B W_A$ admit many equivalent factorisations, so EWC importance computed on one may not transfer cleanly to the next task. SLAO normalises the factorisation at each boundary.</p>
+
+<h4>Step 1: QR orthogonalisation of $W_A$</h4>
+<p>At task $t+1$ start, QR-decompose $W_A^\top = QR$ with $Q \in \mathbb{R}^{M \times r}$ orthonormal, $R \in \mathbb{R}^{r \times r}$ upper triangular. Set $W_A \leftarrow Q^\top$, $W_B \leftarrow W_B R^\top$ (product $W$ unchanged). Now $W_A$ has orthonormal rows &#x2014; each rank-1 component captures a distinct input direction.</p>
+
+<h4>Step 2: Fisher-weighted EMA of $W_B$</h4>
+$$W_B^{\text{merged}} \leftarrow \frac{F \odot W_B^{(t)} + W_B^{(t-1)}}{F + \mathbf{1}}$$
+<p>$F$ is the Signature-Fisher reshaped to match $W_B$. High-Fisher elements (important to attractor shape) weight current task parameters more heavily; low-Fisher elements drift toward the historical average.</p>`],
+
+  fisher:["Signature-Fisher",R`
+<h4>Why prediction-Fisher fails for chaos</h4>
+<p>EWC's standard importance $F_i^{\text{pred}} = \mathbb{E}[(\partial \hat{x}_t / \partial \theta_i)^2]$ requires differentiating through the trajectory. For chaotic systems $\|\partial \hat{x}_t / \partial \theta_i\| \sim e^{\lambda_{\max} t}$, causing explosion over long BPTT horizons. For Lorenz at $\rho = 28$, $\lambda_{\max} \approx 0.9$ nats/s &#x2014; gradients inflate by $\sim e^{1.8}$ over 200 steps.</p>
+
+<h4>Signature-Fisher: differentiate the attractor, not the trajectory</h4>
+$$F_i^\Phi = \left\|\frac{\partial \phi(\theta)}{\partial \theta_i}\right\|^2 = \sum_{k=1}^{24}\left(\frac{\partial \phi_k(\theta)}{\partial \theta_i}\right)^2$$
+<p>Since each $\phi_k$ is an ergodic average, its gradient is stable: it measures how sensitively the <em>long-run attractor shape</em> depends on $\theta_i$, not a single trajectory point.</p>
+
+<h4>Normalisation</h4>
+$$F_i^\Phi \leftarrow \frac{\max(0,\, F_i^\Phi)}{\max_j F_j^\Phi + \varepsilon}$$
+<p>Maps importances to $[0,1]$, making $\lambda$ scale-invariant across attractors with different chaoticity.</p>`],
+
+  ewc:["EWC Regularisation",R`
+<h4>Elastic Weight Consolidation</h4>
+<p>After task $t$, the penalty anchors parameters near post-task values $\theta^*$:</p>
+$$\mathcal{L}_{\text{EWC}} = \frac{\lambda}{2}\sum_i F_i^\Phi\,(\theta_i - \theta_i^*)^2$$
+<p>Parameters critical to attractor shape (high $F_i^\Phi$) are tightly constrained; unimportant ones are free to adapt.</p>
+
+<h4>Full PIAGETS objective</h4>
+$$\mathcal{L} = \mathcal{L}_t + \frac{\lambda}{2}\sum_i F_i^\Phi(\theta_i-\theta_i^*)^2 + \mu\,\|\Phi_{\text{topo}}^{\text{soft}}(\theta) - \Phi_{\text{topo}}(\theta^*)\|^2$$
+<p>The third term regularises the soft topological entropy directly, preventing EWC from protecting individual weights while the symbolic structure of the attractor drifts &#x2014; a failure mode specific to piecewise-linear systems.</p>
+
+<h4>$\lambda$ guide</h4>
+<table>
+<tr><th>$\lambda$</th><th>Effect</th></tr>
+<tr><td>0</td><td>No regularisation &#x2014; catastrophic forgetting</td></tr>
+<tr><td>2&#x2013;4</td><td>Accommodation: light constraint, fast adaptation</td></tr>
+<tr><td>5&#x2013;8</td><td>Standard: good balance for mixed streams</td></tr>
+<tr><td>10&#x2013;20</td><td>Assimilation: heavy consolidation, same-class variants</td></tr>
+</table>`],
+
+  probe:["Schema Probe",R`
+<h4>Assimilation vs Accommodation</h4>
+<p>Before task $t+1$, the probe inspects the model's current attractor signature:</p>
+<ol style="padding-left:16px;line-height:2">
+<li>Compute $\phi_{\text{cur}} = \phi(\theta_t^0)$ &#x2014; model signature before adaptation</li>
+<li>For each seen class $k$: centroid $\bar{\phi}_k = \frac{1}{N_k}\sum_{t':\text{cls}=k}\phi_{t'}$</li>
+<li>Distance $d_k = \|\phi_{\text{cur}} - \bar{\phi}_k\|_2$; $d_{\min} = \min_k d_k$</li>
+<li>$d_{\min} < \sigma_{\text{thresh}}$ &#x21d2; <b>ASSIMILATION</b>, $\lambda \leftarrow \lambda_{\text{assim}}$</li>
+<li>else &#x21d2; <b>ACCOMMODATION</b>, $\lambda \leftarrow \lambda_{\text{accom}}$</li>
+</ol>
+<p>Result: adaptive PIAGETS achieves $\text{rec\_ora} = 0.90$ vs $0.70$ for fixed $\lambda$. For Lorenz $\rho=28$ &#x2192; Lorenz $\rho=35$ (same class), the probe selects heavy $\lambda$; for Lorenz &#x2192; Torus (new class), it selects light $\lambda$ for rapid accommodation.</p>`],
+
+  phi:["Attractor Signature φ(θ)",R`
+<h4>Definition and differentiability</h4>
+<p>$\phi(\theta) \in \mathbb{R}^{24}$ embeds the model's long-run attractor geometry. All components use <em>sigmoid-based soft approximations</em> of non-differentiable quantities (threshold crossings, region membership, topological counts), enabling $\nabla_\theta \phi$ via autograd. Computed from $T_{\text{warm}}=200$ (discard) $+$ $T_{\text{track}}=500$ steps of free-run.</p>
+
+<h4>$\phi^{(a)}$ &#x2014; Linear core eigenvalue magnitudes [10 dims]</h4>
+<p>The diagonal $a \in \mathbb{R}^M$ controls the linear skeleton. Sort $|a_i|$ descending; take top 10:</p>
+$$\phi^{(a)}_k = |a_{\sigma(k)}|, \quad k=1,\ldots,10$$
+<p>Values near 1: near-marginal stability (slow decay, integrator-like). Values $\ll 1$: fast contraction. Capture the timescales of the linear part of each attractor.</p>
+
+<h4>$\phi^{(b)}$ &#x2014; Soft activation rates [6 dims]</h4>
+<p>Long-run firing probability of each ReLU unit, approximated with sigmoid ($\beta=10$):</p>
+$$\phi^{(b)}_p = \frac{1}{T}\sum_{t=1}^T \sigma(\beta \cdot z_{t,p}), \quad p=1,\ldots,P$$
+<p>$\phi^{(b)}_p \approx 1$: unit always fires (linear behaviour). $\phi^{(b)}_p \approx 0.5$: intermittent &#x2014; typical of chaos. The sigmoid $\sigma(\beta z)$ replaces the hard indicator $\mathbf{1}[z>0]$ with a smooth differentiable approximation.</p>
+
+<h4>$\phi^{(c)}$ &#x2014; Soft activation variability [6 dims]</h4>
+$$\phi^{(c)}_p = \operatorname{std}_{t}\!\left[\sigma(\beta \cdot z_{t,p})\right]$$
+<p>High variability ($\approx 0.5$): trajectory crosses the ReLU threshold frequently &#x2014; unit participates actively in nonlinear dynamics. Low: stuck in one linear region. Together with $\phi^{(b)}$, characterises which of the $2^P$ linear regions are visited.</p>
+
+<h4>$\phi^{(d)}$ &#x2014; Soft topological entropy [1 dim]</h4>
+$$\phi^{(d)} = \log\!\left(\sum_{r \in \{0,1\}^P} \exp\!\left(\beta \cdot n_r^{\text{soft}}(\theta)\right)\right)$$
+<p>$n_r^{\text{soft}}$ is a sigmoid-gated soft count of trajectory points in region $r$. This log-sum-exp over all $2^P$ soft region counts is differentiable. High: many active regions (chaotic). Low: one region (limit cycle). Intermediate: quasiperiodic torus.</p>
+
+<h4>$\phi^{(e)}$ &#x2014; Soft Lyapunov exponent [1 dim]</h4>
+$$\phi^{(e)} = \frac{1}{T}\sum_{t=1}^T \log\!\left\|J_t\, v_t\right\|$$
+<p>$J_t = \nabla_z f(z_t;\theta)$ is the AL-RNN Jacobian (via autograd), $v_t$ is the leading tangent direction maintained by power iteration. $\phi^{(e)} > 0$: chaos. $= 0$: quasiperiodic/periodic. $< 0$: stable fixed point.</p>
+
+<h4>Reading the bar chart</h4>
+<p>Blue: eigenvalue magnitudes (timescales). Ochre: activation rates (which units fire). Moss: activation variability (intermittency). Clay: topological entropy (complexity). Black: Lyapunov exponent (chaoticity). Lorenz: high lyap + high topo. Torus: zero lyap + medium topo. Limit cycle: zero lyap + minimal topo.</p>`],
+
+  config:["PIAGETS Config Guide",R`
+<h4>Architecture: M, P, r</h4>
+<p>$M$: total latent dimension. $P$: ReLU units &#x2014; creates up to $2^P$ linear regions. $r$: LoRA rank. For 3D attractors, $M=32, P=12, r=8$ gives good capacity. Increase $M$ and $P$ for higher-dimensional systems. Rule of thumb: $P \geq 8$ for chaotic systems (need several hundred active regions to faithfully represent a butterfly attractor).</p>
+<h4>Fisher type</h4>
+<p><b>Signature-Fisher</b> (default): stable for chaotic systems. <b>Prediction-Fisher</b>: standard EWC, numerically explosive for high-$\lambda_{\max}$ attractors but faster to compute.</p>
+<h4>SLAO toggles</h4>
+<p><b>QR init</b>: orthogonalise $W_A$ at each boundary (strongly recommended). <b>SLAO merge</b>: Fisher-weighted EMA of $W_B$ (recommended). Cost: one QR decomposition ($r \times M$) per task boundary.</p>`],
+
+  stream:["Task Streams",R`
+<h4>Attractor classes</h4>
+<table>
+<tr><th>Class</th><th>System</th><th>Topology</th><th>$\lambda_{\max}$</th></tr>
+<tr><td style="color:#3e6e8e">0 &#x2014; chaos</td><td>Lorenz, R&#xf6;ssler</td><td>Chaotic attractor</td><td>$\lambda_\max>0$</td></tr>
+<tr><td style="color:#b98e3e">1 &#x2014; torus</td><td>Quasiperiodic torus</td><td>2-torus</td><td>$\lambda_\max=0$</td></tr>
+<tr><td style="color:#6f7355">2 &#x2014; cycle</td><td>Limit cycle, VdP</td><td>Circle</td><td>$\lambda_\max=0$</td></tr>
+</table>
+<h4>Presets</h4>
+<ul>
+<li><b>Standard 10</b>: canonical benchmark &#x2014; Lorenz ($\rho \in \{28,35,40,45\}$), Torus ($\omega_2 \in \{0.382, 0.618, 0.271\}$), VdP ($\mu \in \{1.5, 3.0, 5.0\}$) interleaved across all 3 classes.</li>
+<li><b>Lorenz Ramp</b>: 4 same-class Lorenz tasks with increasing $\rho$. Tests within-class CL; probe should always assimilate.</li>
+<li><b>Alternating</b>: 6 tasks cycling 0&#x2192;1&#x2192;2&#x2192;0&#x2192;1&#x2192;2. Tests cross-class interference.</li>
+<li><b>Pathological</b>: 5 tasks designed to stress the probe &#x2014; anchors and switches chosen to maximise assimilation/accommodation confusion.</li>
+</ul>`],
+
+  metrics:["Continual Learning Metrics",R`
+<h4>Backward Transfer (BWT)</h4>
+$$\text{BWT} = \frac{1}{T-1}\sum_{t=1}^{T-1}(R_{T,t} - R_{t,t})$$
+<p>$R_{i,j}$ = MSE of model snapshot $i$ on task $j$. Negative BWT = forgetting. Zero = no forgetting. Positive = backward transfer (rare).</p>
+<h4>Forward Transfer (FWT)</h4>
+$$\text{FWT} = \frac{1}{T-1}\sum_{t=2}^T(R_{t-1,t} - R_{\text{scratch},t})$$
+<p>$R_{t-1,t}$: error on task $t$ before training on it. $R_{\text{scratch},t}$: fresh model on task $t$ only. Positive FWT = prior tasks provide good initialisation.</p>
+<h4>Recognition accuracy</h4>
+<p><b>rec_ora</b>: fraction of tasks whose final model signature $\phi_T$ is nearest to the correct oracle task signature $\phi^*_j$. Best reported: 0.90 (PIAGETS adaptive). <b>rec_cen</b>: same but using class centroids $\bar{\phi}_k$; stricter, requires class-discriminative $\phi$-space structure.</p>`],
+};
+
+function openInfo(key){
+  if(_currentInfoKey===key&&el("infoPane").classList.contains("show")){closeInfo();return;}
+  const e=INFO[key]; if(!e) return;
+  _currentInfoKey=key;
+  el("infoTitle").textContent=e[0];
+  el("infoBody").innerHTML=e[1];
+  el("infoPane").classList.add("show");
+  el("infoPane").setAttribute("aria-hidden","false");
+  ensureKatex(renderMath);
+}
+el("infoClose").addEventListener("click",closeInfo);
+document.addEventListener("keydown",e=>{if(e.key==="Escape") closeInfo();});
+function closeInfo(){
+  _currentInfoKey=null;
+  el("infoPane").classList.remove("show");
+  el("infoPane").setAttribute("aria-hidden","true");
+}
+document.querySelectorAll(".ibtn[data-info]").forEach(b=>{
+  b.addEventListener("click",e=>{e.stopPropagation();openInfo(b.dataset.info);});
+});
+
+/* ─── boot ───────────────────────────────────────── */
+drawPhi(new Array(PHI_N).fill(0));
+renderTopBar();
+wsConnect();
+
+// keep open section height correct when content changes (phi charts resize etc.)
+new ResizeObserver(()=>{
+  document.querySelectorAll(".sec.open").forEach(sec=>{
+    const inner=sec.querySelector(".secinner");
+    sec.querySelector(".secbody").style.height=inner.scrollHeight+"px";
+  });
+}).observe(el("side"));
+</script>
+</body>
+</html>

@@ -66,8 +66,23 @@ def torus(n=20000, dt=0.05, transient=2000, omega1=1.0, omega2=0.5 * (5 ** 0.5 -
     return (traj - mu) / sd, (mu, sd)
 
 
+def van_der_pol(n=20000, dt=0.05, transient=4000, mu=2.5):
+    """Van der Pol relaxation oscillator in 3D (third coordinate decays to 0,
+    giving a 2D attractor embedded in 3D, identical to limit_cycle in that
+    respect). mu=2.5 gives strong relaxation: sharp spikes in x followed by
+    slow recovery -- a limit cycle (beta_1=1, one zero Lyapunov) that is
+    topologically identical to limit_cycle but whose waveform, time-scale, and
+    rate descriptors differ markedly. Tests whether the gamma knob correctly
+    groups them (gamma=0) or separates them (gamma=1)."""
+    def rhs(t, z, mu):
+        x, y, w = z
+        return [mu * (x - x ** 3 / 3.0 - y), x / mu, -0.5 * w]
+    return _integrate(rhs, [2.0, 0.0, 1.0], (mu,), dt, n, transient)
+
+
 SYSTEMS = {"lorenz": lorenz, "rossler": rossler,
-           "limit_cycle": limit_cycle, "torus": torus}
+           "limit_cycle": limit_cycle, "torus": torus,
+           "van_der_pol": van_der_pol}
 
 
 # --- within-class variants and the labelled continual-learning stream ---

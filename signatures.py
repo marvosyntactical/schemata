@@ -275,10 +275,10 @@ def lyapunov_signature(model, seed_obs, n=2500, warmup=400, tol=1e-3):
 # --------------------------------------------------------------------------- #
 #  5.6  attractor topology  (persistent homology; optional dependency)
 # --------------------------------------------------------------------------- #
-def attractor_topology(model, seed_obs, n=3000, max_dim=1, n_sub=800, thresh=2.0):
-    # max_dim=1 (components + loops) by default: H_2 (voids) makes the Vietoris-Rips
-    # complex O(n_sub^3) and blows memory on a workstation. beta_0/beta_1 already
-    # separate point (b1=0) / cycle (b1=1) / torus (b1=2) / branched attractors.
+def attractor_topology(model, seed_obs, n=3000, max_dim=2, n_sub=800, thresh=2.0):
+    # max_dim=2 includes H_2 (voids): sharpens Lorenz (2-lobe) vs Rossler (1-lobe)
+    # separation. Was capped at 1 on workstations; 51 GB VRAM makes it tractable.
+    # n_sub=800 keeps the Vietoris-Rips complex manageable.
     if not _HAS_PH:
         return {}                                  # block omitted; assembly copes
     cloud = model.free_run(seed_obs, n)
@@ -391,9 +391,12 @@ def spatial_signature(obs):
 #  top-level extraction
 # --------------------------------------------------------------------------- #
 def extract(model, seed_obs, obs_data=None, geom_per_channel=False, k_max=6,
-            lyap_n=2500, n_visit=4000, warmup=500):
+            lyap_n=2500, n_visit=4000, warmup=500, ph_max_dim=2, ph_n_sub=150):
     """Full per-model signature. O(N) in trajectory length plus small-matrix
-    linear algebra over the handful of visited regions."""
+    linear algebra over the handful of visited regions.
+
+    ph_max_dim: persistent homology degree cap (2 = include voids/H_2; 1 = loops only).
+    ph_n_sub:   subsample size for the Vietoris-Rips complex (larger = slower)."""
     rd = model.enumerate_visited_regions(seed_obs, n=n_visit, warmup=warmup)
     blocks = {}
     blocks.update(equilibrium_portrait(rd))
@@ -401,7 +404,7 @@ def extract(model, seed_obs, obs_data=None, geom_per_channel=False, k_max=6,
     blocks.update(symbolic_graph(rd, k_max=k_max))
     blocks.update(generator_geometry(model))
     blocks.update(lyapunov_signature(model, seed_obs, n=lyap_n))
-    blocks.update(attractor_topology(model, seed_obs))
+    blocks.update(attractor_topology(model, seed_obs, max_dim=ph_max_dim, n_sub=ph_n_sub))
     blocks.update(region_spectrum(rd))
     if obs_data is not None:                       # data-side geometry channel
         blocks.update(spectral_signature(obs_data))
@@ -508,6 +511,86 @@ def estimate_reliability(groups, reg=0.1):
     informative = [v for v in rel.values() if v > 0]
     mean = np.mean(informative) if informative else 1.0
     return {k: (v / mean if v > 0 else 0.0) for k, v in rel.items()}
+
+
+# --------------------------------------------------------------------------- #
+#  Layer 2 alternatives: supervised Fisher weights and silhouette weights
+# --------------------------------------------------------------------------- #
+def fisher_weights(sigs, labels, reg=0.1):
+    """Per-block supervised Fisher weights from ground-truth class labels.
+
+        w_b = between_mean / (within_mean + reg * between_mean)
+
+    A block that perfectly separates classes (within→0) gets weight >> 1; a block
+    that is constant or uninformative gets weight 0. Same return format as
+    estimate_reliability() so it can be passed directly to combine_distance(reliability=).
+
+    Fixes the 'coarse-dilutes-sharp' failure of Layer-2 reliability (signature_findings
+    §6.3): reliability measures local discriminability, which coarse and fine blocks can
+    both satisfy; Fisher measures global between/within separation, which rewards blocks
+    that produce clean global partitions."""
+    labels = np.asarray(labels)
+    bnames = sorted({b for s in sigs for b in s.blocks})
+    K = len(sigs)
+    iu = np.triu_indices(K, 1)
+    same = labels[iu[0]] == labels[iu[1]]
+    fw = {}
+    for b in bnames:
+        D, _ = block_distance_matrix(sigs, b)
+        if D is None:
+            fw[b] = 0.0
+            continue
+        off = D[iu]
+        total_med = np.median(off[off > 0]) if np.any(off > 0) else 0.0
+        if total_med < 1e-8:
+            fw[b] = 0.0
+            continue
+        w_mean = float(off[same].mean()) if same.any() else 0.0
+        a_mean = float(off[~same].mean()) if (~same).any() else 0.0
+        if a_mean < 1e-8:
+            fw[b] = 0.0
+        else:
+            fw[b] = a_mean / (w_mean + reg * a_mean)
+    informative = [v for v in fw.values() if v > 0]
+    mean_w = np.mean(informative) if informative else 1.0
+    return {k: (v / mean_w if v > 0 else 0.0) for k, v in fw.items()}
+
+
+def silhouette_weights(sigs, clusters, reg=0.0):
+    """Per-block silhouette-based weights: rewards blocks whose geometry supports
+    the given cluster assignment. Use after an initial clustering pass to refine.
+
+        w_b = max(0, silhouette_score(D_b, clusters))
+
+    Negative silhouettes (block contradicts clusters) are zeroed. Unsupervised:
+    takes cluster assignments rather than ground-truth labels, so it can be applied
+    when labels are unavailable by bootstrapping from a first-pass clustering.
+    Same return format as estimate_reliability() for combine_distance(reliability=)."""
+    from sklearn.metrics import silhouette_score as _sil
+    clusters = np.asarray(clusters)
+    bnames = sorted({b for s in sigs for b in s.blocks})
+    sw = {}
+    n_unique = len(np.unique(clusters))
+    if n_unique < 2:
+        return {b: 0.0 for b in bnames}
+    for b in bnames:
+        D, _ = block_distance_matrix(sigs, b)
+        if D is None:
+            sw[b] = 0.0
+            continue
+        off = D[np.triu_indices(len(sigs), 1)]
+        if np.median(off[off > 0]) < 1e-8 if np.any(off > 0) else True:
+            sw[b] = 0.0
+            continue
+        try:
+            sc = float(_sil(D, clusters, metric="precomputed"))
+        except Exception:
+            sw[b] = 0.0
+            continue
+        sw[b] = max(0.0, sc)
+    informative = [v for v in sw.values() if v > 0]
+    mean_w = np.mean(informative) if informative else 1.0
+    return {k: (v / mean_w if v > 0 else 0.0) for k, v in sw.items()}
 
 
 # --------------------------------------------------------------------------- #
