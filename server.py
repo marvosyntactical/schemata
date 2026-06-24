@@ -14,6 +14,8 @@ import copy
 import json
 import os
 import sys
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -43,7 +45,7 @@ _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="train")
 # ── Preset task streams ─────────────────────────────────────────────────────
 _N, _DT_LOR, _DT = 5000, 0.01, 0.05
 _CLS_COLOR = {0: "#3e6e8e", 1: "#b98e3e", 2: "#6f7355"}
-_DEFAULT_EP = 300
+_DEFAULT_EP = 400
 
 
 def _mk(name, gen, cls, epochs=_DEFAULT_EP, label=None):
@@ -132,7 +134,7 @@ class Session:
         self.oracle_phis: dict = {}
         self.phi_history: list = []
         self.lock = asyncio.Lock()
-        self.M, self.P, self.rank, self.d = 16, 6, 6, 3
+        self.M, self.P, self.rank, self.d = 48, 16, 12, 3
         self.use_cl = True
         self.use_merge = True
         self.use_qr = True
@@ -142,6 +144,9 @@ class Session:
         self.lam_assim = 10.0
         self.lam_accom = 2.0
         self.assim_ratio = 10.0
+        self.lr_train = 6e-4          # default 0.2 × 3e-3
+        self.train_pause = threading.Event()   # set = paused
+        self.train_cancel = threading.Event()  # set = cancel/reset
 
 
 _sess = Session()
@@ -186,10 +191,19 @@ def _phi(model: ALRNN) -> np.ndarray:
         return diff_phi(m, T_warmup=100, T_track=200, beta=10.0).numpy().astype(np.float32)
 
 
-def _freerun(model: ALRNN, n: int = 3000, seed_row=None):
+def _freerun(model: ALRNN, n: int = 3000, seed_data=None):
+    """Free-run with teacher-forcing warmup so latent state is on the attractor manifold."""
     m = _cpu_copy(model)
-    z0 = seed_row[:m.d] if seed_row is not None else np.zeros(m.d, dtype=np.float32)
-    traj, pats = m.free_run(z0, n, return_patterns=True)
+    with torch.no_grad():
+        z = torch.zeros(m.M, dtype=torch.float32)
+        if seed_data is not None and len(seed_data) > 1:
+            z[:m.d] = torch.from_numpy(seed_data[0, :m.d]).float()
+            warmup = min(500, len(seed_data) - 1)
+            for t in range(warmup):
+                z = m.step(z)
+                z[:m.d] = torch.from_numpy(seed_data[t + 1, :m.d]).float()
+        z0_full = z.numpy()
+    traj, pats = m.free_run(z0_full[:m.d], n, return_patterns=True, z0_full=z0_full)
     powers = (1 << np.arange(m.P))
     regions = (pats.astype(np.int32) * powers).sum(1).tolist()
     return traj.astype(np.float32), regions
@@ -240,9 +254,14 @@ def _phi_pca(phi_mat: np.ndarray):
     return mean.tolist(), vecs
 
 
+class _TrainStop(Exception):
+    pass
+
+
 # ── Training coroutine ───────────────────────────────────────────────────────
 
-async def _do_train(ws, s: Session, t_idx: int, epochs: int, send, send_status):
+async def _do_train(ws, s: Session, t_idx: int, epochs: int, lr: float,
+                    send, send_status, msg_queue: asyncio.Queue):
     task = s.stream[t_idx]
     await send_status(f"Loading data for {task['name']}…")
     td = await asyncio.to_thread(_get_data, s, t_idx)
@@ -267,18 +286,22 @@ async def _do_train(ws, s: Session, t_idx: int, epochs: int, send, send_status):
             asyncio.run_coroutine_threadsafe(
                 q.put({"type": "progress", "ep": ep + 1, "total": epochs,
                        "recon": float(recon), "ewc": float(ewc)}), loop)
-            # freerun preview every 20 epochs (safe: called between batch steps)
             if (ep + 1) % 20 == 0:
-                tr, rg = _freerun(s.model, n=800, seed_row=td[0])
+                tr, rg = _freerun(s.model, n=800, seed_data=td)
                 asyncio.run_coroutine_threadsafe(
                     q.put({"type": "freerun_preview",
                            "xyz": tr.flatten().tolist(), "regions": rg}), loop)
+            # Pause: block training thread here until resumed or cancelled
+            while s.train_pause.is_set() and not s.train_cancel.is_set():
+                time.sleep(0.05)
+            if s.train_cancel.is_set():
+                raise _TrainStop()
 
         await send_status(f"Training {task['name']} ({epochs} ep) on {DEVICE}…")
         fut = loop.run_in_executor(_executor, lambda: train_with_ewc(
             s.model, td,
             cl=s.cl if use_cl else None,
-            epochs=epochs, seq_len=80, batch=64, lr=3e-3,
+            epochs=epochs, seq_len=120, batch=64, lr=lr,
             alpha=0.5, alpha_end=0.05,
             device=DEVICE,
             epoch_callback=cb,
@@ -286,29 +309,67 @@ async def _do_train(ws, s: Session, t_idx: int, epochs: int, send, send_status):
             current_class=task.get("cls"),
         ))
 
+        cancelled = False
         while not fut.done():
+            # Drain control messages from the shared WS queue
+            while not msg_queue.empty():
+                try:
+                    raw_ctrl = msg_queue.get_nowait()
+                    if raw_ctrl is None:
+                        cancelled = True; s.train_cancel.set(); break
+                    ctrl = json.loads(raw_ctrl)
+                    ctrl_op = ctrl.get("op", "")
+                    if ctrl_op == "pause":
+                        s.train_pause.set()
+                        await send_status("Paused")
+                    elif ctrl_op == "resume":
+                        s.train_pause.clear()
+                        await send_status("Resumed")
+                    elif ctrl_op == "reset":
+                        cancelled = True; s.train_cancel.set()
+                    elif ctrl_op == "ping":
+                        await send({"type": "pong"})
+                    # other ops (next, set_stream, etc.) silently discarded during training
+                except asyncio.QueueEmpty:
+                    break
+            # Process training progress messages
             try:
                 msg = await asyncio.wait_for(q.get(), timeout=0.05)
                 await send(msg)
             except asyncio.TimeoutError:
                 pass
-        await fut
+
+        try:
+            await fut
+        except _TrainStop:
+            pass
         while not q.empty():
             await send(q.get_nowait())
 
+        if cancelled:
+            # Apply reset and return without sending task_done
+            s.train_pause.clear()
+            s.train_cancel.clear()
+            s.model = _new_model(s)
+            s.cl    = _new_cl(s) if s.use_cl else None
+            s.trained.clear()
+            s.phi_history.clear()
+            s.current_task = 0 if s.stream else -1
+            await send({"type": "reset_ok", "task_idx": s.current_task})
+            await send_status("Model reset")
+            return
+
         if use_cl:
-            # store_task / fisher needs CPU model
             m_cpu = _cpu_copy(s.model)
             await asyncio.to_thread(s.cl.store_task, m_cpu, td, task.get("cls"), use_sig)
             if s.use_merge:
-                # apply merged B back to the GPU model
                 with torch.no_grad():
                     s.model.W_B.data.copy_(s.cl.B_merged.to(DEVICE))
                     if s.cl.A_merge is not None:
                         s.model.W_A.data.copy_(s.cl.A_merge.to(DEVICE))
 
         phi_vec = await asyncio.to_thread(_phi, s.model)
-        traj, regions = await asyncio.to_thread(_freerun, s.model, 3000, td[0])
+        traj, regions = await asyncio.to_thread(_freerun, s.model, 3000, td)
         mse = await asyncio.to_thread(_eval_mse, s.model, td)
         s.trained.add(t_idx)
         s.current_task = t_idx
@@ -345,19 +406,31 @@ def _build_page() -> str:
         )
     return html
 
-_PAGE = _build_page()
-
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 
 @app.get("/")
 async def serve_ui():
-    return HTMLResponse(_PAGE)
+    return HTMLResponse(_build_page())
+
+@app.get("/overview.html")
+async def serve_overview():
+    p = os.path.join(_DIR, "overview.html")
+    with open(p) as f:
+        return HTMLResponse(f.read())
+
+@app.get("/three.min.js")
+async def serve_three():
+    return FileResponse(os.path.join(_DIR, "three.min.js"), media_type="application/javascript")
 
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
     s = _sess
+    s.train_pause.clear()
+    s.train_cancel.clear()
+    _stop = asyncio.Event()
+    _msg_queue: asyncio.Queue = asyncio.Queue()
 
     async def send(msg: dict):
         try:
@@ -368,14 +441,44 @@ async def ws_endpoint(ws: WebSocket):
     async def send_status(msg: str, level: str = "info"):
         await send({"type": "status", "msg": msg, "level": level})
 
+    async def _reader():
+        """Continuously read WS messages into queue so main loop and training pump can share them."""
+        try:
+            while not _stop.is_set():
+                try:
+                    raw = await asyncio.wait_for(ws.receive_text(), timeout=1.0)
+                    await _msg_queue.put(raw)
+                except asyncio.TimeoutError:
+                    pass
+        except WebSocketDisconnect:
+            await _msg_queue.put(None)
+        except Exception:
+            await _msg_queue.put(None)
+
+    async def _keepalive():
+        while not _stop.is_set():
+            await asyncio.sleep(15)
+            if _stop.is_set(): break
+            try:
+                await ws.send_json({"type": "ping"})
+            except Exception:
+                break
+
+    asyncio.ensure_future(_keepalive())
+    reader_task = asyncio.ensure_future(_reader())
+
     try:
         while True:
-            raw = await ws.receive_text()
+            raw = await _msg_queue.get()
+            if raw is None:
+                break  # disconnect
             data = json.loads(raw)
             op = data.get("op", "")
 
-            if op == "ping":
-                await send({"type": "pong"})
+            if op in ("ping",) or data.get("type") == "pong":
+                # ping from client → pong; pong from client (response to our ping) → ignore
+                if op == "ping":
+                    await send({"type": "pong"})
 
             elif op == "init":
                 async with s.lock:
@@ -407,10 +510,13 @@ async def ws_endpoint(ws: WebSocket):
                 tasks_info = [{"idx": i, "name": t["name"], "label": t["label"],
                                "cls": t["cls"], "color": t["color"], "epochs": t["epochs"]}
                               for i, t in enumerate(s.stream)]
-                # Bundle task-0 data so the client draws it immediately (no round-trip)
+                # Send lightweight stream info first (keeps WS alive during data gen)
+                await send({"type": "stream_info", "tasks": tasks_info, "preset": preset})
+                # Bundle task-0 data separately so client can draw immediately
                 td0 = await asyncio.to_thread(_get_data, s, 0)
                 stride0 = max(1, len(td0) // 5000)
-                await send({"type": "stream_info", "tasks": tasks_info, "preset": preset,
+                await send({"type": "data", "task_idx": 0,
+                            "name": s.stream[0]["name"],
                             "xyz": td0[::stride0].flatten().tolist(),
                             "color": s.stream[0].get("color", "#c87028")})
 
@@ -436,9 +542,11 @@ async def ws_endpoint(ws: WebSocket):
                 tasks_info = [{"idx": i, "name": t["name"], "label": t["label"],
                                "cls": t["cls"], "color": t["color"], "epochs": t["epochs"]}
                               for i, t in enumerate(s.stream)]
+                await send({"type": "stream_info", "tasks": tasks_info, "preset": "custom"})
                 td0 = await asyncio.to_thread(_get_data, s, 0)
                 stride0 = max(1, len(td0) // 5000)
-                await send({"type": "stream_info", "tasks": tasks_info, "preset": "custom",
+                await send({"type": "data", "task_idx": 0,
+                            "name": s.stream[0]["name"],
                             "xyz": td0[::stride0].flatten().tolist(),
                             "color": s.stream[0].get("color", "#c87028")})
 
@@ -460,6 +568,13 @@ async def ws_endpoint(ws: WebSocket):
                 await send({"type": "cl_updated", "use_cl": s.use_cl,
                             "lam": s.lam, "adaptive": s.adaptive})
 
+            elif op == "pause":
+                s.train_pause.set()
+                await send_status("Paused")
+
+            elif op == "resume":
+                s.train_pause.clear()
+
             elif op == "train":
                 t_idx = int(data.get("task_idx", s.current_task))
                 if t_idx < 0 or t_idx >= len(s.stream):
@@ -467,7 +582,8 @@ async def ws_endpoint(ws: WebSocket):
                 if s.model is None:
                     await send_status("Model not initialised", "error"); continue
                 epochs = int(data.get("epochs", s.stream[t_idx]["epochs"]))
-                await _do_train(ws, s, t_idx, epochs, send, send_status)
+                lr = float(data.get("lr", s.lr_train)); s.lr_train = lr
+                await _do_train(ws, s, t_idx, epochs, lr, send, send_status, _msg_queue)
 
             elif op == "next":
                 if not s.stream:
@@ -478,8 +594,6 @@ async def ws_endpoint(ws: WebSocket):
                 if nxt is None:
                     await send_status("All tasks trained!", "info"); continue
                 s.current_task = nxt
-                # Prefetch and include data in advance so client can show
-                # the attractor immediately (server blocks message loop during training)
                 td_vis = await asyncio.to_thread(_get_data, s, nxt)
                 stride = max(1, len(td_vis) // 5000)
                 sub = td_vis[::stride]
@@ -487,17 +601,18 @@ async def ws_endpoint(ws: WebSocket):
                             "xyz": sub.flatten().tolist(),
                             "color": s.stream[nxt].get("color", "#c87028")})
                 epochs = int(data.get("epochs", s.stream[nxt]["epochs"]))
-                await _do_train(ws, s, nxt, epochs, send, send_status)
+                lr = float(data.get("lr", s.lr_train)); s.lr_train = lr
+                await _do_train(ws, s, nxt, epochs, lr, send, send_status, _msg_queue)
 
             elif op == "freerun":
                 if s.model is None: continue
                 n = int(data.get("steps", 3000))
-                seed_row = None
+                seed_data = None
                 if s.current_task >= 0 and len(s.task_data) > s.current_task:
                     td = s.task_data[s.current_task]
-                    if td is not None: seed_row = td[0]
+                    if td is not None: seed_data = td
                 async with s.lock:
-                    traj, regions = await asyncio.to_thread(_freerun, s.model, n, seed_row)
+                    traj, regions = await asyncio.to_thread(_freerun, s.model, n, seed_data)
                 await send({"type": "freerun", "xyz": traj.flatten().tolist(),
                             "regions": regions, "n_regions": len(set(regions))})
 
@@ -554,7 +669,7 @@ async def ws_endpoint(ws: WebSocket):
                         m = _new_model(s)
                         await asyncio.to_thread(
                             train_with_ewc, m, td, None, task["epochs"],
-                            60, 64, 1e-3, 0.5, 0.05, 0.0,
+                            120, 64, 3e-3, 0.5, 0.05, 0.0,
                             DEVICE, None, lambda _: None)
                         pv = await asyncio.to_thread(_phi, m)
                         s.oracle_phis[i] = pv
@@ -612,10 +727,13 @@ async def ws_endpoint(ws: WebSocket):
                 if slot not in s.snapshots:
                     await send_status(f"Slot {slot} is empty", "warn"); continue
                 snap = s.snapshots[slot]
+                seed_data = None
+                if s.current_task >= 0 and len(s.task_data) > s.current_task:
+                    seed_data = s.task_data[s.current_task]
                 async with s.lock:
                     s.model.load_state_dict(
                         {k: v.to(DEVICE) for k, v in snap["state"].items()})
-                    traj, regions = await asyncio.to_thread(_freerun, s.model, 3000)
+                    traj, regions = await asyncio.to_thread(_freerun, s.model, 3000, seed_data)
                 await send_status(f"Loaded: {snap['label']}")
                 await send({"type": "freerun", "xyz": traj.flatten().tolist(),
                             "regions": regions, "n_regions": len(set(regions))})
@@ -648,11 +766,16 @@ async def ws_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as exc:
+        import traceback; traceback.print_exc()
         try:
             await ws.send_json({"type": "error", "msg": str(exc)})
         except Exception:
             pass
-        raise
+    finally:
+        _stop.set()
+        s.train_cancel.set()   # unblock any paused training thread
+        s.train_pause.clear()
+        reader_task.cancel()
 
 
 def main():
@@ -661,7 +784,7 @@ def main():
     ap.add_argument("--port", type=int, default=8765)
     args = ap.parse_args()
     print(f"schemata server  →  http://{args.host}:{args.port}/")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

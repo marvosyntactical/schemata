@@ -1,42 +1,72 @@
-PIAGETS long-sequence BWT/FWT results
+PIAGETS benchmark results
 Stream: ['Lor_r28', 'Tor_0.382', 'VdP_m1.5', 'Lor_r35', 'Tor_0.618', 'VdP_m3.0', 'Lor_r40', 'VdP_m5.0', 'Tor_0.271', 'Lor_r45']
 Classes: [0, 1, 2, 0, 1, 2, 0, 2, 1, 0]
+λ_EWC=5.0  λ_assim=10.0  λ_accom=2.0  σ_schema=2.0  N_WARMUP=30  ANNEAL_FRAC=0.33
 
-Adaptive λ: assimilation=10.0  accommodation=2.0  sigma=2.0
+  method                   mse_BWT   dphi_BWT        mse      dphi    ARI   cLor   cTor   cVdP   c_ass   c_acc    wtime
+  baseline                 +0.6005     +5.432    0.27469    11.004  0.353  300.0  118.3   70.3     nan   250.0     212s
+  piagets                  +0.4643     -0.349    0.26175     9.740  0.348  300.0  119.7   68.7     nan   250.0     229s
+  piagets_adaptive         +0.4595     +0.559    0.28383     8.971  0.178  300.0  119.7    3.7     nan   153.0     293s
+  piagets_inv              +0.0377     -0.357    0.30091    10.697  0.178  300.0  119.7   70.3     nan   250.0     234s
+  piagets_ada_nolora       +0.4074     +4.661    0.29114     9.340  0.384  300.0  118.7  134.3     nan   250.0     291s
 
-vanilla:
-  BWT = -4.2802   FWT = +11.7113   rec_ora = 1.000   rec_cen = 0.900   mse_avg = 0.27689   walltime = 188s
-  R diagonal (perf at train time): -12.142  -2.391  -2.012  -0.000  -3.472  -7.655  -0.000  -2.118  -4.673  -0.000
-  MSE diagonal (recon at train time): 0.48479  0.06782  0.01395  0.56386  0.07714  0.01941  0.62698  0.03054  0.05424  0.83017
-  BWT per task: +4.799  -6.066  -6.088  -7.552  -5.144  -0.481  -7.302  -6.320  -4.367
 
 baseline:
-  BWT = -0.7425   FWT = +4.8530   rec_ora = 0.700   rec_cen = 0.700   mse_avg = 0.28628   walltime = 186s
-  R diagonal (perf at train time): -12.142  -6.771  -6.991  -9.567  -5.651  -5.854  -13.111  -12.373  -13.057  -10.671
-  MSE diagonal (recon at train time): 0.46301  0.07150  0.00452  0.58958  0.07913  0.00938  0.95661  0.04258  0.05634  0.59016
-  BWT per task: +1.455  -3.479  -3.884  +2.760  -3.938  -5.182  +1.528  +1.308  +2.749
-
-pred_ewc:
-  BWT = -1.2756   FWT = +4.0318   rec_ora = 0.500   rec_cen = 0.400   mse_avg = 0.23400   walltime = 198s
-  R diagonal (perf at train time): -12.142  -7.530  -8.061  -12.362  -9.642  -9.960  -12.911  -8.521  -10.478  -11.971
-  MSE diagonal (recon at train time): 0.48453  0.10771  0.01987  0.49807  0.06888  0.02906  0.45322  0.02715  0.07564  0.57591
-  BWT per task: +0.652  -3.664  -3.793  +2.148  -1.833  -2.284  +0.640  -2.944  -0.402
-
-pred_ewc_adaptive:
-  BWT = -2.5643   FWT = +4.5919   rec_ora = 0.700   rec_cen = 0.700   mse_avg = 0.25076   walltime = 206s
-  R diagonal (perf at train time): -12.142  -8.904  -8.688  -12.491  -7.070  -9.038  -11.772  -6.317  -8.027  -14.088
-  MSE diagonal (recon at train time): 0.47178  0.08799  0.01998  0.52906  0.07754  0.03304  0.68357  0.01807  0.08074  0.50584
-  BWT per task: -0.938  -1.979  -3.514  +1.226  -5.058  -2.857  -0.504  -6.006  -3.450
+  mse_BWT=+0.60053  dphi_BWT=+5.432  ARI=0.353  mse=0.27469  dphi=11.004  walltime=212s
+  conv Lor/Tor/VdP: 300.0 / 118.3 / 70.3
+  conv all/assim/accom: 250.0 / nan / 250.0
+  mse_start assim/accom: nan / 0.6864
+  MSE diagonal: 0.57431  0.10364  0.00574  0.59296  0.08277  0.01425  0.55227  0.02710  0.05536  0.73848
+  dφ diagonal:  11.209  6.216  7.327  11.722  10.393  10.609  10.101  12.439  13.322  16.707
+  mse_start per task: A0.8497  A1.1899  A0.1696  A1.0796  A0.7305  A0.0896  A0.9976  A0.4975  A0.2047  A1.0553
+  conv_half per task: A300  A3  A3  A300  A2  A200  A300  A8  A350  A300
+  mse_BWT per task: +0.26556  +0.99072  +0.64816  +0.10540  +0.96871  +0.43876  +0.05169  +0.96519  +0.97057
+  dphi_BWT per task: +5.559  +7.674  +8.087  +4.208  +4.794  +5.568  +7.472  +3.867  +1.656
 
 piagets:
-  BWT = +1.0905   FWT = +3.1690   rec_ora = 0.400   rec_cen = 0.200   mse_avg = 0.28273   walltime = 215s
-  R diagonal (perf at train time): -12.142  -11.609  -11.853  -12.757  -9.856  -12.940  -11.626  -9.129  -9.490  -9.941
-  MSE diagonal (recon at train time): 0.47167  0.12897  0.01980  0.53097  0.08400  0.02089  0.48116  0.02377  0.06997  0.99606
-  BWT per task: +0.825  +2.326  +1.310  +2.505  -0.522  +2.614  +2.306  -1.829  +0.280
+  mse_BWT=+0.46427  dphi_BWT=-0.349  ARI=0.348  mse=0.26175  dphi=9.740  walltime=229s
+  conv Lor/Tor/VdP: 300.0 / 119.7 / 68.7
+  conv all/assim/accom: 250.0 / nan / 250.0
+  mse_start assim/accom: nan / 2.6053
+  MSE diagonal: 0.52224  0.11663  0.02457  0.60911  0.10159  0.03127  0.57197  0.03962  0.07179  0.52871
+  dφ diagonal:  11.209  9.942  8.034  6.505  8.780  8.298  10.350  8.356  16.596  9.333
+  mse_start per task: A0.8429  A1.1097  A1.8476  A1.1752  A0.7753  A0.1508  A1.0417  A0.6286  A0.4900  A17.9914
+  conv_half per task: A300  A6  A4  A300  A3  A200  A300  A2  A350  A300
+  mse_BWT per task: +0.32527  +0.33905  +0.50574  +0.07299  +0.74124  +0.97854  +0.03904  +0.40452  +0.77201
+  dphi_BWT per task: -3.177  +0.562  +2.687  +0.009  +1.406  +1.573  -1.895  +2.478  -6.781
 
 piagets_adaptive:
-  BWT = -0.6126   FWT = +3.2566   rec_ora = 0.700   rec_cen = 0.400   mse_avg = 0.24606   walltime = 223s
-  R diagonal (perf at train time): -12.142  -11.680  -13.590  -13.666  -7.841  -9.950  -12.186  -7.782  -8.673  -13.043
-  MSE diagonal (recon at train time): 0.48622  0.07889  0.01457  0.55063  0.07711  0.03131  0.54089  0.02880  0.07739  0.57477
-  BWT per task: -0.222  +0.657  +1.926  +4.131  -4.118  -1.905  +1.270  -4.043  -3.210
+  mse_BWT=+0.45951  dphi_BWT=+0.559  ARI=0.178  mse=0.28383  dphi=8.971  walltime=293s
+  conv Lor/Tor/VdP: 300.0 / 119.7 / 3.7
+  conv all/assim/accom: 153.0 / nan / 153.0
+  mse_start assim/accom: nan / 0.8714
+  MSE diagonal: 0.57643  0.12125  0.01780  0.58581  0.06346  0.02561  0.58135  0.03029  0.06657  0.76975
+  dφ diagonal:  11.209  9.643  9.543  5.643  6.133  8.203  7.514  14.530  7.081  10.214
+  mse_start per task: A0.8408  A0.9849  A0.9453  A1.0133  A0.7449  A0.8660  A1.0932  A0.4703  A0.3185  A1.4365
+  conv_half per task: A300  A6  A4  A300  A3  A2  A300  A5  A350  A300
+  mse_BWT per task: +0.43586  +0.61048  +0.36059  +0.07737  +0.74626  +0.48939  +0.06651  +0.52488  +0.82429
+  dphi_BWT per task: -4.289  +1.366  +0.775  +2.432  +3.689  +1.486  +0.315  -2.777  +2.033
 
+piagets_inv:
+  mse_BWT=+0.03773  dphi_BWT=-0.357  ARI=0.178  mse=0.30091  dphi=10.697  walltime=234s
+  conv Lor/Tor/VdP: 300.0 / 119.7 / 70.3
+  conv all/assim/accom: 250.0 / nan / 250.0
+  mse_start assim/accom: nan / 4.3540
+  MSE diagonal: 0.51037  0.13132  0.02739  0.64849  0.11582  0.03001  0.68931  0.12841  0.10018  0.62777
+  dφ diagonal:  11.209  12.058  11.051  12.112  8.479  13.758  10.546  13.489  7.828  6.437
+  mse_start per task: A0.8486  A0.9646  A36.8541  A1.0395  A0.7645  A0.3753  A0.9426  A0.4442  A0.3239  A0.9828
+  conv_half per task: A300  A5  A8  A300  A4  A200  A300  A3  A350  A300
+  mse_BWT per task: +0.27201  +0.02938  +0.15584  +0.10262  -0.00170  -1.12737  +0.05377  +0.40975  +0.44524
+  dphi_BWT per task: -1.577  -1.306  -0.825  -1.870  +2.784  -1.231  -0.895  -2.750  +4.457
+
+piagets_ada_nolora:
+  mse_BWT=+0.40741  dphi_BWT=+4.661  ARI=0.384  mse=0.29114  dphi=9.340  walltime=291s
+  conv Lor/Tor/VdP: 300.0 / 118.7 / 134.3
+  conv all/assim/accom: 250.0 / nan / 250.0
+  mse_start assim/accom: nan / 0.7715
+  MSE diagonal: 0.55550  0.14226  0.02801  0.53386  0.10501  0.02161  0.78881  0.09840  0.08893  0.54899
+  dφ diagonal:  11.209  8.498  5.159  11.878  6.540  6.588  13.011  10.766  8.367  11.380
+  mse_start per task: A0.8303  A1.1601  A0.0583  A1.0549  A0.9792  A0.1293  A0.9772  A0.7753  A0.7248  A1.0258
+  conv_half per task: A300  A3  A200  A300  A3  A200  A300  A3  A350  A300
+  mse_BWT per task: +0.23345  +0.68202  +0.50072  +0.12541  +0.78695  +0.43298  -0.21282  +0.32687  +0.79110
+  dphi_BWT per task: +1.258  +4.980  +8.090  +1.665  +7.346  +8.965  -0.550  +3.164  +7.029

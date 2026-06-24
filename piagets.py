@@ -15,6 +15,7 @@ SLAO per-task call order:
     train_with_ewc(model, data_t, cl=cl, ...)           # SLAO line 5
     cl.store_task(model, data_t, true_class=c)          # SLAO lines 6–7
 """
+import copy
 import numpy as np
 import torch
 
@@ -206,43 +207,66 @@ class PIAGETSContinual:
                  lam_phi: float = 0.0,
                  r_lin: int | None = None,
                  phi_reg_kwargs: dict | None = None,
-                 use_class_ewc: bool = False):
+                 use_class_ewc: bool = False,
+                 use_class_b: bool = False,
+                 use_ortho: bool = False,
+                 ortho_k: int = 2,
+                 no_slao: bool = False,
+                 invert_fisher: bool = False):
         self.lam_ewc         = lam_ewc
         self.lam_assim       = lam_assim if lam_assim is not None else 2.0 * lam_ewc
         self.lam_accom       = lam_accom if lam_accom is not None else 0.4 * lam_ewc
         self.schema_sigma    = schema_sigma
-        self.assim_mse_ratio = assim_mse_ratio   # threshold for MSE-ratio probe (Fix 1)
+        self.assim_mse_ratio = assim_mse_ratio
         self.sig_kw          = sig_fisher_kwargs or {}
+        self.no_slao         = no_slao   # EWC on all params (incl W_A), no QR-init/merge
+        self.invert_fisher   = invert_fisher  # use (1-F) instead of F as EWC weights
         # Option 3: φ-functional regularization
         self.lam_phi      = lam_phi
         self._phi_reg_kw  = phi_reg_kwargs or dict(T_warmup=100, T_track=100, beta=10.0)
         self._phi_stars:  dict = {}   # class → 24-dim np.array (EMA of trained φ)
         # Option 4: dual LoRA block split
-        self.r_lin        = r_lin    # linear-block width; None = disabled
-        # Option 5: per-class EWC anchors (fixes cross-class anchor contamination)
+        self.r_lin        = r_lin
+        # Per-class EWC anchors
         self.use_class_ewc       = use_class_ewc
-        self._F_B_by_class:      dict = {}   # class → normalized Fisher for W_B
-        self._W_B_star_by_class: dict = {}   # class → W_B anchor
-        self._class_task_counts: dict = {}   # class → number of tasks seen
+        self._F_B_by_class:      dict = {}
+        self._W_B_star_by_class: dict = {}
+        self._class_task_counts: dict = {}
+
+        # Per-class (W_B, W_A) modules — replaces B_merged_by_class.
+        # Each class stores an EMA of both factors, eliminating the A_merge mismatch
+        # that caused large negative BWT when using (W_B^class, W_A^global) at eval.
+        self.use_class_b     = use_class_b
+        self._class_modules: dict = {}   # class → {'W_B': tensor, 'W_A': tensor}
+
+        # Orthogonal subspace — joint growing basis with budget cap.
+        # Replaces per-class _W_B_bases (which exhausted the rank after n_classes × k dims).
+        # _U_joint grows incrementally: at most ortho_budget = r//2 total directions.
+        self.use_ortho   = use_ortho
+        self._ortho_k    = ortho_k       # max new directions extracted per task
+        self._U_joint: torch.Tensor | None = None   # joint orthonormal basis (M × n_dirs)
+
+        self.current_mode: str = "accommodation"
 
         # SLAO merge state
         self.B_merged: torch.Tensor | None = None
         self.A_merge:  torch.Tensor | None = None
-        self._B_prev:  torch.Tensor | None = None   # W_B_ft from last task
-        self._A_prev:  torch.Tensor | None = None   # W_A_ft from last task
+        self._B_prev:  torch.Tensor | None = None
+        self._A_prev:  torch.Tensor | None = None
 
-        # EWC on W_B, A, h (global consolidated — always maintained as fallback)
+        # EWC state — W_B, A, h always; W_A only when no_slao
         self._F_B:      torch.Tensor | None = None
         self._W_B_star: torch.Tensor | None = None
         self._F_A_diag: torch.Tensor | None = None
         self._A_star:   torch.Tensor | None = None
         self._F_h:      torch.Tensor | None = None
         self._h_star:   torch.Tensor | None = None
+        self._F_W_A:    torch.Tensor | None = None   # W_A Fisher (no_slao only)
+        self._W_A_star: torch.Tensor | None = None   # W_A anchor (no_slao only)
 
         # Schema tracking
-        self._task_phis:   list = []
-        self._n_tasks:     int  = 0
-        # MSE reference for Fix-1 probe: maximum end-of-training MSE seen across all tasks
+        self._task_phis:    list  = []
+        self._n_tasks:      int   = 0
         self._mse_max_seen: float | None = None
 
     # ── Schema probe (adaptive λ) ────────────────────────────────────────────
@@ -332,6 +356,99 @@ class PIAGETSContinual:
               f"  ratio={ratio:.2f}  → {mode.upper()}  λ={lam:.1f}")
         return lam, mode, None
 
+    # ── Option B: φ-probe via brief λ=0 fine-tune ──────────────────────────
+
+    def probe_from_phi_finetune(self, model, data,
+                                n_probe_epochs: int = 30,
+                                seq_len: int = 100, batch: int = 64,
+                                probe_alpha: float = 0.5, probe_lr: float = 1e-3,
+                                device: str = "cpu"):
+        """Brief λ=0 fine-tune on new data → compute φ → compare to stored centroids.
+
+        Two-stage classification:
+        1. Chaos shortcut: if φ_act_std.mean() < CHAOS_THRESHOLD after fine-tuning,
+           classify as the lowest-φ_act_std centroid (the "chaos" class, i.e. Lorenz).
+           φ_act_std drops toward 0 within ~50 epochs for chaotic attractors even when
+           MSE hasn't fully converged, making this robust to partial probe convergence.
+        2. Full 24D φ comparison (fallback): for periodic/quasiperiodic schemas
+           (Torus/VdP) which converge quickly and are well-separated in full φ-space.
+        """
+        if not self._phi_stars or not self._task_phis:
+            return self.lam_accom, "accommodation", None
+
+        # Store M and P for φ_act_std slice before deepcopy
+        M_lat = model.M   # total latent units
+        P_nl  = model.P   # nonlinear (piecewise-linear) units
+        # φ layout: [phi_lin(M-P), phi_acts(P), phi_act_std(P), phi_topo(1), phi_lyap(1)]
+        # phi_act_std occupies indices [M_lat : M_lat + P_nl]
+        act_std_sl = slice(M_lat, M_lat + P_nl)
+
+        # Deep-copy so the probe doesn't touch the actual model weights
+        m_probe = copy.deepcopy(model).to(device)
+        x = torch.as_tensor(data, dtype=torch.float32, device=device)
+        n_chunks = (x.shape[0] - 1) // seq_len
+        if n_chunks < 1:
+            del m_probe
+            return self.lam_accom, "accommodation", None
+        chunks = x[:n_chunks * seq_len].reshape(n_chunks, seq_len, x.shape[1])
+        opt = torch.optim.Adam(m_probe.parameters(), lr=probe_lr)
+        for _ in range(n_probe_epochs):
+            perm = torch.randperm(n_chunks, device=device)
+            for i in range(0, n_chunks, batch):
+                xb   = chunks[perm[i : i + batch]]
+                pred = m_probe.forced_rollout(xb, probe_alpha)
+                loss = ((pred - xb[:, 1:]) ** 2).mean()
+                opt.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(m_probe.parameters(), 10.0)
+                opt.step()
+
+        phi_probe = diff_phi(m_probe,
+                             T_warmup=self.sig_kw.get("T_warmup", 100),
+                             T_track =self.sig_kw.get("T_track",  200),
+                             beta    =self.sig_kw.get("beta",     10.0)).detach().numpy()
+        del m_probe, opt
+
+        classes   = list(self._phi_stars.keys())
+        centroids = self._phi_stars
+
+        # ── Stage 1: chaos shortcut (detects Lorenz even from partial probe) ──
+        # Chaotic attractors drive φ_act_std → 0 (all gates freeze in 1-region mode).
+        # This happens within ~50–100 probe epochs even before MSE converges.
+        # Periodic/quasiperiodic attractors keep φ_act_std >> 0 at any convergence level.
+        CHAOS_THRESHOLD    = 0.20   # probe φ_act_std mean below this → chaos regime
+        CHAOS_CENTROID_MAX = 0.05   # centroid φ_act_std mean below this → confirmed chaos class
+        probe_act_std_mean = float(phi_probe[act_std_sl].mean())
+        centroid_act_std   = {c: float(centroids[c][act_std_sl].mean()) for c in classes}
+        chaos_cls = min(centroid_act_std, key=centroid_act_std.__getitem__)
+        if (probe_act_std_mean < CHAOS_THRESHOLD
+                and centroid_act_std[chaos_cls] < CHAOS_CENTROID_MAX):
+            lam  = self.lam_assim
+            mode = "assimilation"
+            print(f"  [probe_φ] φ_act_std={probe_act_std_mean:.3f} < {CHAOS_THRESHOLD}"
+                  f"  chaos_cls={chaos_cls}  → {mode.upper()} (chaos shortcut)  λ={lam:.1f}")
+            return lam, mode, chaos_cls
+
+        # ── Stage 2: full 24D φ comparison (Torus / VdP / new schema) ─────────
+        all_phis = np.stack([p for _, p in self._task_phis])
+        scale    = np.std(all_phis, axis=0)
+        scale[scale < 1e-9] = 1.0
+
+        intra     = [np.linalg.norm((p - centroids[c]) / (scale + 1e-9))
+                     for c, p in self._task_phis]
+        intra_mean = float(np.mean(intra)) if intra else 1.0
+
+        dists    = {c: float(np.linalg.norm((phi_probe - centroids[c]) / (scale + 1e-9)))
+                    for c in classes}
+        near_c, near_d = min(dists.items(), key=lambda x: x[1])
+        threshold  = self.schema_sigma * max(intra_mean, 0.1)
+        recognised = near_c if near_d < threshold else None
+        mode = "assimilation" if recognised is not None else "accommodation"
+        lam  = self.lam_assim if mode == "assimilation" else self.lam_accom
+        print(f"  [probe_φ] φ_act_std={probe_act_std_mean:.3f}  near_c={near_c}"
+              f"  d={near_d:.3f}  thr={threshold:.3f}  → {mode.upper()}  λ={lam:.1f}")
+        return lam, mode, recognised
+
     # ── Option 3: φ-functional regularization ───────────────────────────────
 
     def phi_reg_loss(self, model, current_class=None):
@@ -385,24 +502,43 @@ class PIAGETSContinual:
 
     # ── EWC loss on W_B ──────────────────────────────────────────────────────
 
+    def _ew(self, F: torch.Tensor) -> torch.Tensor:
+        """Return EWC weight tensor: F normally, (1-F) when invert_fisher=True."""
+        return (1.0 - F) if self.invert_fisher else F
+
     def ewc_loss(self, model, current_class=None):
-        """L_EWC = λ · Σ_{ij} F̂_{ij}^B · (W_B_{ij} − Ŵ_B_{ij})²
-        If use_class_ewc and current_class is known: anchor to per-class Fisher/W_B*
-        so each class's representation is protected by its own class-specific history,
-        not a cross-class blend that contaminates the anchor direction."""
+        """L_EWC = λ · Σ_{ij} w_{ij} · (θ_{ij} − θ̂_{ij})²
+        where w = F̂  (standard) or (1−F̂) (inverted).
+        Inverted: high-sensitivity parameters are released; low-sensitivity are frozen.
+        If use_class_ewc: W_B anchored per-class; A and h via global EWC.
+        If no_slao: W_A also penalized (since it is not re-initialized by QR)."""
+        dev = model.W_B.device
         if self.use_class_ewc and current_class is not None:
             if current_class not in self._F_B_by_class:
-                return torch.tensor(0.0)
-            F_c    = self._F_B_by_class[current_class]
-            Wstar_c = self._W_B_star_by_class[current_class]
-            return self.lam_ewc * (F_c * (model.W_B - Wstar_c) ** 2).sum()
+                # New class: no per-class W_B anchor yet, but still protect A and h
+                loss = torch.tensor(0.0)
+                if self._F_A_diag is not None:
+                    loss = loss + self.lam_ewc * (self._ew(self._F_A_diag.to(dev)) * (model.A - self._A_star.to(dev)) ** 2).sum()
+                if self._F_h is not None:
+                    loss = loss + self.lam_ewc * (self._ew(self._F_h.to(dev)) * (model.h - self._h_star.to(dev)) ** 2).sum()
+                return loss
+            F_c     = self._ew(self._F_B_by_class[current_class].to(dev))
+            Wstar_c = self._W_B_star_by_class[current_class].to(dev)
+            loss = self.lam_ewc * (F_c * (model.W_B - Wstar_c) ** 2).sum()
+            if self._F_A_diag is not None:
+                loss = loss + self.lam_ewc * (self._ew(self._F_A_diag.to(dev)) * (model.A - self._A_star.to(dev)) ** 2).sum()
+            if self._F_h is not None:
+                loss = loss + self.lam_ewc * (self._ew(self._F_h.to(dev)) * (model.h - self._h_star.to(dev)) ** 2).sum()
+            return loss
         if self._F_B is None:
             return torch.tensor(0.0)
-        loss = self.lam_ewc * (self._F_B * (model.W_B - self._W_B_star) ** 2).sum()
+        loss = self.lam_ewc * (self._ew(self._F_B.to(dev)) * (model.W_B - self._W_B_star.to(dev)) ** 2).sum()
         if self._F_A_diag is not None:
-            loss = loss + self.lam_ewc * (self._F_A_diag * (model.A - self._A_star) ** 2).sum()
+            loss = loss + self.lam_ewc * (self._ew(self._F_A_diag.to(dev)) * (model.A - self._A_star.to(dev)) ** 2).sum()
         if self._F_h is not None:
-            loss = loss + self.lam_ewc * (self._F_h * (model.h - self._h_star) ** 2).sum()
+            loss = loss + self.lam_ewc * (self._ew(self._F_h.to(dev)) * (model.h - self._h_star.to(dev)) ** 2).sum()
+        if self.no_slao and self._F_W_A is not None:
+            loss = loss + self.lam_ewc * (self._ew(self._F_W_A.to(dev)) * (model.W_A - self._W_A_star.to(dev)) ** 2).sum()
         return loss
 
     # ── SLAO lines 6–7 + EWC update ─────────────────────────────────────────
@@ -419,14 +555,15 @@ class PIAGETSContinual:
         t     = self._n_tasks
         lam_t = 1.0 / (t ** 0.5)                          # SLAO λ schedule
 
-        # ── Fisher on W_B, A, h ─────────────────────────────────────────────
+        # ── Fisher on all named parameters ──────────────────────────────────
         label = "sig" if use_sig_fisher else "pred"
         print(f"  [SLAO] computing {label}-Fisher (task {t}) …")
-        raw = signature_fisher(model, **self.sig_kw) if use_sig_fisher \
-              else pred_fisher(model, data, device=device)
-        F_B = _normalize(raw.get("W_B", torch.zeros_like(model.W_B)))
-        F_A = _normalize(raw.get("A",   torch.zeros_like(model.A)))
-        F_h = _normalize(raw.get("h",   torch.zeros_like(model.h)))
+        raw   = signature_fisher(model, **self.sig_kw) if use_sig_fisher \
+                else pred_fisher(model, data, device=device)
+        F_B   = _normalize(raw.get("W_B", torch.zeros_like(model.W_B)))
+        F_W_A = _normalize(raw.get("W_A", torch.zeros_like(model.W_A)))
+        F_A   = _normalize(raw.get("A",   torch.zeros_like(model.A)))
+        F_h   = _normalize(raw.get("h",   torch.zeros_like(model.h)))
 
         # Global consolidated EWC (EMA of Fisher and anchors across all tasks)
         if self._F_B is None:
@@ -443,6 +580,15 @@ class PIAGETSContinual:
             self._A_star   = self._A_star   + lam_t * (model.A.data   - self._A_star)
             self._F_h      = self._F_h      + lam_t * (F_h            - self._F_h)
             self._h_star   = self._h_star   + lam_t * (model.h.data   - self._h_star)
+
+        # W_A EWC — only for no_slao (W_A is not QR-overwritten in this mode)
+        if self.no_slao:
+            if self._F_W_A is None:
+                self._F_W_A    = F_W_A.clone()
+                self._W_A_star = model.W_A.data.clone()
+            else:
+                self._F_W_A    = self._F_W_A    + lam_t * (F_W_A          - self._F_W_A)
+                self._W_A_star = self._W_A_star + lam_t * (model.W_A.data - self._W_A_star)
 
         # Per-class EWC anchors (EMA within each class separately)
         if self.use_class_ewc and true_class is not None:
@@ -468,6 +614,30 @@ class PIAGETSContinual:
             self.B_merged = model.W_B.data.clone()
         else:
             self.B_merged = self.B_merged + alpha_elem * (model.W_B.data - self.B_merged)
+
+        # ── Per-class module store (piagets_class_b) ─────────────────────────
+        # Store (W_B, W_A) per class — avoids the A_merge mismatch where global
+        # W_A (from most recent task) is mismatched with class-specific W_B at eval.
+        if self.use_class_b and true_class is not None:
+            alpha_c = lam_t * (1.0 - self._F_B.clamp(0.0, 1.0))
+            if true_class not in self._class_modules:
+                self._class_modules[true_class] = {
+                    'W_B': model.W_B.data.clone(),
+                    'W_A': model.W_A.data.clone(),
+                }
+            else:
+                old = self._class_modules[true_class]
+                self._class_modules[true_class] = {
+                    'W_B': old['W_B'] + alpha_c * (model.W_B.data - old['W_B']),
+                    'W_A': old['W_A'] + lam_t   * (model.W_A.data - old['W_A']),
+                }
+
+        # ── Orthogonal joint basis update (piagets_ortho) ────────────────────
+        # Adds top Fisher-weighted singular directions of this task's W_B to a
+        # shared joint basis, capped at r//2 total dirs. Replaces per-class bases
+        # which exhausted the full rank after n_classes × ortho_k > r.
+        if self.use_ortho:
+            self._update_joint_basis(model.W_B.data, self._F_B)
 
         # ── Store for next task's qr_init (SLAO lines 3–4) ──────────────────
         self._B_prev = model.W_B.data.clone()
@@ -501,14 +671,103 @@ class PIAGETSContinual:
         print(f"  [SLAO] task {t} stored. λ_ema={lam_t:.3f}  F_B.max={F_B.max():.3f}  "
               f"φ[-3:]={phi_vec[-3:]}")
 
-    # ── Inference adapter (SLAO line 8) ──────────────────────────────────────
+    # ── Inference adapters (SLAO line 8) ─────────────────────────────────────
 
     def restore_merged(self, model):
-        """Set W_B = B_merged, W_A = A_merge so inference uses merged LoRA."""
+        """Set W_B = B_merged (global EMA), W_A = A_merge."""
         if self.B_merged is not None and self.A_merge is not None:
             with torch.no_grad():
                 model.W_B.data.copy_(self.B_merged)
                 model.W_A.data.copy_(self.A_merge)
+
+    def restore_merged_class(self, model, class_id: int):
+        """Set (W_B, W_A) from the per-class module for class_id.
+        Both factors are class-specific — no A_merge mismatch.
+        Falls back to global restore_merged if class not yet seen."""
+        if self.use_class_b and class_id in self._class_modules:
+            mod = self._class_modules[class_id]
+            with torch.no_grad():
+                model.W_B.data.copy_(mod['W_B'])
+                model.W_A.data.copy_(mod['W_A'])
+        else:
+            self.restore_merged(model)
+
+    # ── Class-B probe ────────────────────────────────────────────────────────
+
+    @torch.no_grad()
+    def probe_from_class(self, model, data, true_class=None,
+                         seq_len: int = 100, n_batches: int = 20,
+                         alpha: float = 0.05):
+        """For class_b: evaluate the class-specific module on the data.
+        If true_class is already known, checks that module's MSE directly.
+        Falls back to probe_from_task_start for unseen classes."""
+        if true_class in self._class_modules and self._mse_max_seen is not None:
+            mod = self._class_modules[true_class]
+            orig_WB = model.W_B.data.clone()
+            orig_WA = model.W_A.data.clone()
+            model.W_B.data.copy_(mod['W_B'])
+            model.W_A.data.copy_(mod['W_A'])
+            mse = _eval_mse_quick(model, data, seq_len=seq_len,
+                                  n_batches=n_batches, alpha=alpha)
+            model.W_B.data.copy_(orig_WB)
+            model.W_A.data.copy_(orig_WA)
+            ratio = mse / (self._mse_max_seen + 1e-8)
+            mode  = "assimilation" if ratio < self.assim_mse_ratio else "accommodation"
+            lam   = self.lam_assim if mode == "assimilation" else self.lam_accom
+            print(f"  [probe_class] cls={true_class}  mse={mse:.4f}"
+                  f"  ratio={ratio:.2f}  → {mode.upper()}  λ={lam:.1f}")
+            return lam, mode, true_class
+        return self.probe_from_task_start(model, data, seq_len=seq_len,
+                                          n_batches=n_batches, alpha=alpha)
+
+    # ── Orthogonal subspace helpers ───────────────────────────────────────────
+
+    def _update_joint_basis(self, W_B: torch.Tensor, F_B: torch.Tensor):
+        """Add Fisher-weighted singular directions of W_B to the joint protected basis.
+
+        Uses Gram-Schmidt to orthogonalize new directions against existing ones,
+        capped at budget = r // 2 total directions. This avoids exhausting the
+        full LoRA rank when n_classes × ortho_k >= r.
+        """
+        r      = W_B.shape[1]
+        budget = max(r // 2, 1)
+        k      = min(self._ortho_k, r)
+
+        col_norms = (F_B.sum(dim=0) + 1e-8).sqrt()
+        W_sc  = (W_B * col_norms.unsqueeze(0)).float()
+        U_new, _, _ = torch.linalg.svd(W_sc, full_matrices=False)
+        U_new = U_new[:, :k].detach()           # (M, k) candidate directions
+
+        if self._U_joint is None:
+            n_take = min(k, budget)
+            self._U_joint = U_new[:, :n_take].clone()
+        else:
+            for j in range(U_new.shape[1]):
+                if self._U_joint.shape[1] >= budget:
+                    break
+                v    = U_new[:, j].to(self._U_joint.device)
+                v    = v - self._U_joint @ (self._U_joint.t() @ v)
+                norm = v.norm()
+                if norm > 1e-4:                 # only add truly new direction
+                    self._U_joint = torch.cat(
+                        [self._U_joint, (v / norm).unsqueeze(1)], dim=1)
+
+    def apply_ortho_grad_mask(self, model):
+        """Project W_B.grad onto the orthogonal complement of the joint schema basis.
+
+        grad ← grad − U (U^T grad)
+
+        Removes gradient components in the directions most important for all
+        previously learned schemas, making accommodation structurally interference-free.
+        Budget-capped at r//2 directions so new schemas always have room to learn.
+
+        Call AFTER loss.backward(), BEFORE opt.step(), during accommodation only.
+        """
+        if not self.use_ortho or self._U_joint is None or model.W_B.grad is None:
+            return
+        U    = self._U_joint.to(model.W_B.grad.device)
+        grad = model.W_B.grad
+        model.W_B.grad.data.copy_(grad - U @ (U.t() @ grad))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -519,8 +778,22 @@ def train_with_ewc(model, data, cl=None, epochs: int = 200, seq_len: int = 100,
                    batch: int = 64, lr: float = 1e-3, alpha: float = 0.5,
                    alpha_end: float = 0.05, reg_lambda: float = 0.0,
                    device: str = "cpu", epoch_callback=None, log=print,
-                   regime: str | None = None, current_class=None):
-    """GTF-BPTT with optional PIAGETS EWC + φ-reg penalties and dual-LoRA block masking."""
+                   regime: str | None = None, current_class=None,
+                   accommodation: bool = False,
+                   epoch_log: list | None = None,
+                   n_warmup: int = 0,
+                   anneal_frac: float = 0.0):
+    """GTF-BPTT with optional EWC + φ-reg penalties, dual-LoRA masking, ortho masking.
+
+    accommodation=True activates orthogonal gradient masking (if cl.use_ortho).
+    epoch_log: if a list is passed, per-epoch reconstruction MSE is appended to it.
+
+    n_warmup: first N epochs train with λ=0 and W_B frozen (W_A warm-start after QR-init).
+    anneal_frac: fraction of post-warmup epochs in which λ decays linearly to 0 (final phase).
+      This lets the model reach near-baseline MSE while still having received EWC protection
+      for the majority of training.  The anchor for the NEXT task is stored from the final
+      (annealed) model, which has lower MSE but slightly less EWC-constrained parameters.
+    """
     model.to(device)
     x = torch.as_tensor(data, dtype=torch.float32, device=device)
     N, d = x.shape
@@ -532,8 +805,29 @@ def train_with_ewc(model, data, cl=None, epochs: int = 200, seq_len: int = 100,
 
     use_phi_reg = (cl is not None and cl.lam_phi > 0.0)
     use_block   = (cl is not None and cl.r_lin is not None and regime is not None)
+    use_ortho   = (cl is not None and cl.use_ortho and accommodation)
+
+    # Compute epoch boundaries for the three-phase schedule:
+    #   [0, n_warmup)      — warmup: λ=0, W_B frozen
+    #   [n_warmup, ewc_end) — full EWC at λ_target
+    #   [ewc_end, epochs)   — anneal: λ linearly → 0
+    n_post    = epochs - n_warmup
+    n_anneal  = int(round(n_post * anneal_frac))
+    ewc_end   = epochs - n_anneal   # absolute epoch where anneal begins
 
     for ep in range(epochs):
+        # --- λ schedule ---
+        if ep < n_warmup:
+            lam_scale = 0.0
+            in_warmup = True
+        elif ep < ewc_end:
+            lam_scale = 1.0
+            in_warmup = False
+        else:
+            steps_in  = ep - ewc_end
+            lam_scale = 1.0 - (steps_in + 1) / n_anneal if n_anneal > 0 else 0.0
+            in_warmup = False
+
         a    = alpha + (alpha_end - alpha) * ep / max(epochs - 1, 1)
         perm = torch.randperm(n_chunks, device=device)
         tot_r, tot_e, tot_p, n_seen = 0.0, 0.0, 0.0, 0
@@ -547,14 +841,21 @@ def train_with_ewc(model, data, cl=None, epochs: int = 200, seq_len: int = 100,
             else:
                 pred   = model.forced_rollout(xb, a)
                 loss_r = ((pred - xb[:, 1:]) ** 2).mean()
-            loss_e = cl.ewc_loss(model, current_class) if cl is not None else torch.tensor(0.0)
+            if cl is not None and lam_scale > 0.0:
+                loss_e = cl.ewc_loss(model, current_class) * lam_scale
+            else:
+                loss_e = torch.tensor(0.0)
             loss_p = (cl.phi_reg_loss(model, current_class)
                       if use_phi_reg else torch.tensor(0.0))
             loss   = loss_r + loss_e + loss_p
             opt.zero_grad()
             loss.backward()
+            if in_warmup and model.W_B.grad is not None:
+                model.W_B.grad.zero_()   # freeze W_B during warm-start
             if use_block:
                 cl.apply_block_mask(model, regime)
+            if use_ortho:
+                cl.apply_ortho_grad_mask(model)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
             opt.step()
             tot_r += loss_r.item() * n
@@ -564,8 +865,11 @@ def train_with_ewc(model, data, cl=None, epochs: int = 200, seq_len: int = 100,
         tot_r /= n_seen
         tot_e /= n_seen
         tot_p /= n_seen
+        if epoch_log is not None:
+            epoch_log.append(tot_r)
         if epoch_callback is not None:
             epoch_callback(ep, tot_r, tot_e)
         if (ep + 1) % 50 == 0 or ep == 0:
             log(f"  ep {ep + 1:3d}/{epochs}  recon={tot_r:.5f}  ewc={tot_e:.5f}"
+                + (f"  φ={lam_scale:.2f}" if (n_warmup > 0 or anneal_frac > 0) else "")
                 + (f"  phi_reg={tot_p:.5f}" if use_phi_reg else ""))

@@ -1,0 +1,61 @@
+<style>
+.ov{display:grid;grid-template-columns:1fr 1fr;gap:0 28px;align-items:start}
+.ov-full{grid-column:1/-1}
+@media(max-width:480px){.ov{grid-template-columns:1fr}}
+</style>
+
+<div class="ov">
+
+<!-- LEFT COLUMN -->
+<div>
+
+<h4>What is PIAGETS?</h4>
+<p><b>PIAGETS</b> &mdash; <em>Parameter-Importance-weighted Attractor-Graph Embedding for Task Schematization</em> &mdash; is a continual learning framework for <em>dynamical systems reconstruction</em> (DSR). Given a stream of time-series from different chaotic or periodic attractors, the model must reconstruct each one without catastrophically forgetting prior tasks.</p>
+
+<h4>Assimilation vs Accommodation</h4>
+<ul>
+<li><b>Assimilation</b>: new data fits an existing schema &mdash; reinforce with high $\lambda$</li>
+<li><b>Accommodation</b>: new data doesn&rsquo;t fit &mdash; build a new schema with low $\lambda$</li>
+</ul>
+<p>The <em>schema probe</em> compares $\phi(\theta)$ to known class centroids before each task and selects $\lambda$ automatically.</p>
+
+<h4>Core Challenge</h4>
+<p>Standard EWC uses the prediction Fisher $F_i^{\text{pred}} = \mathbb{E}[(\partial \hat{x}_t / \partial \theta_i)^2]$, which explodes for chaotic systems: gradients grow as $e^{\lambda_{\max} t}$ along trajectories.</p>
+<p>PIAGETS replaces it with the <em>Signature-Fisher</em>:</p>
+$$F_i^\Phi = \left\|\frac{\partial\,\phi(\theta)}{\partial\,\theta_i}\right\|^2$$
+<p>$\phi$ is a stable ergodic attractor signature, so $\nabla_\theta \phi$ is bounded regardless of $\lambda_{\max}$.</p>
+
+</div>
+
+<!-- RIGHT COLUMN -->
+<div>
+
+<h4>Pipeline</h4>
+<ol style="padding-left:16px;line-height:2.1">
+<li>Train AL-RNN on task $t$ with GTF-BPTT and EWC penalty weighted by $F_i^\Phi$ from task $t-1$</li>
+<li>Compute $\phi(\theta_t) \in \mathbb{R}^{24}$ &mdash; differentiable attractor signature</li>
+<li><b>SLAO</b>: QR-orthogonalise $W_A$; Fisher-weighted EMA of $W_B$ (merge before forget)</li>
+<li>Schema probe: $d_k = \|\phi - \bar\phi_k\|$ &rarr; choose $\lambda$ for next task</li>
+</ol>
+
+<h4>Attractor Classes</h4>
+<table>
+<tr><th>Class</th><th>System</th><th>$\lambda_{\max}$</th></tr>
+<tr><td style="color:#3e6e8e">0 &mdash; chaos</td><td>Lorenz, R&ouml;ssler</td><td>$> 0$</td></tr>
+<tr><td style="color:#b98e3e">1 &mdash; torus</td><td>Quasiperiodic</td><td>$= 0$</td></tr>
+<tr><td style="color:#6f7355">2 &mdash; cycle</td><td>Limit cycle, VdP</td><td>$= 0$</td></tr>
+</table>
+
+<h4>Key Parameters</h4>
+<table>
+<tr><th>Param</th><th>Role</th></tr>
+<tr><td><code>M</code></td><td>Total latent dimension</td></tr>
+<tr><td><code>P</code></td><td>ReLU units &mdash; up to $2^P$ linear regions</td></tr>
+<tr><td><code>r</code></td><td>LoRA rank of $W = W_B W_A$</td></tr>
+<tr><td><code>lr</code></td><td>Adam learning rate</td></tr>
+<tr><td><code>$\lambda$</code></td><td>EWC consolidation strength</td></tr>
+</table>
+
+</div>
+
+</div>

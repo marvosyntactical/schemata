@@ -80,9 +80,38 @@ def van_der_pol(n=20000, dt=0.05, transient=4000, mu=2.5):
     return _integrate(rhs, [2.0, 0.0, 1.0], (mu,), dt, n, transient)
 
 
+def halvorsen(n=20000, dt=0.05, transient=5000, a=1.4):
+    """Halvorsen attractor (chaotic for a≈1.4, three-fold rotationally symmetric).
+        dx/dt = -a*x - 4*y - 4*z - y²
+        dy/dt = -a*y - 4*z - 4*x - z²
+        dz/dt = -a*z - 4*x - 4*y - x²
+    Visually distinct 3-lobed spiral; no branched-manifold, different topo class
+    from Lorenz."""
+    def rhs(t, z, a):
+        x, y, w = z
+        return [-a*x - 4*y - 4*w - y**2,
+                -a*y - 4*w - 4*x - w**2,
+                -a*w - 4*x - 4*y - x**2]
+    return _integrate(rhs, [1.0, 0.0, 0.0], (a,), dt, n, transient)
+
+
+def thomas(n=20000, dt=0.05, transient=5000, b=0.19):
+    """Thomas' cyclically symmetric attractor (chaotic for b≈0.19).
+        dx/dt = sin(y) - b*x
+        dy/dt = sin(z) - b*y
+        dz/dt = sin(x) - b*z
+    Topologically distinct from Lorenz (no branched manifold) and Rössler
+    (3-fold symmetry, complex multi-scroll structure)."""
+    def rhs(t, z, b):
+        x, y, w = z
+        return [np.sin(y) - b*x, np.sin(w) - b*y, np.sin(x) - b*w]
+    return _integrate(rhs, [0.1, 0.0, 0.0], (b,), dt, n, transient)
+
+
 SYSTEMS = {"lorenz": lorenz, "rossler": rossler,
            "limit_cycle": limit_cycle, "torus": torus,
-           "van_der_pol": van_der_pol}
+           "van_der_pol": van_der_pol, "thomas": thomas,
+           "halvorsen": halvorsen}
 
 
 # --- within-class variants and the labelled continual-learning stream ---

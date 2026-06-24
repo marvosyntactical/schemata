@@ -90,6 +90,30 @@ body{display:flex;flex-direction:row;background:var(--night)}
 }
 #side::-webkit-scrollbar{width:8px}
 #side::-webkit-scrollbar-thumb{background:var(--paper-3);border:2px solid var(--paper);border-radius:4px}
+
+/* ── hamburger / mobile drawer ── */
+#hamburger{
+  display:none;
+  position:absolute;top:calc(var(--bar)+6px);right:8px;z-index:22;
+  background:rgba(16,21,27,.72);border:1px solid rgba(197,184,159,.25);
+  border-radius:5px;cursor:pointer;padding:5px 10px;
+  color:var(--paper);font-size:18px;line-height:1;
+  backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+#sideOverlay{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.48);z-index:55}
+@media(max-width:720px){
+  #hamburger{display:flex;align-items:center;position:fixed;top:var(--bar);right:0;border-radius:0 0 0 8px;}
+  /* stage must cover full viewport — override flex layout */
+  #stage{position:fixed;inset:0;width:100%;height:100%}
+  #side{
+    position:fixed;right:0;top:0;height:100%;z-index:60;
+    transform:translateX(100%);
+    transition:transform .35s cubic-bezier(.22,.85,.3,1);
+    border-left:1px solid #2a2520;box-shadow:-8px 0 28px rgba(0,0,0,.45);
+  }
+  #side.open{transform:none}
+}
+
 .brand{padding-bottom:9px;border-bottom:1px solid var(--ink);margin-bottom:4px}
 .brand h2{font-size:28px;font-weight:700;letter-spacing:-.01em}
 .brand h2 span{color:var(--clay)}
@@ -134,6 +158,7 @@ input:focus,select:focus,button:focus-visible{outline:2px solid var(--blue);outl
 input[type=range]{flex:1.2;accent-color:var(--clay);min-width:60px}
 .params{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;margin:5px 0}
 .params .p{display:flex;align-items:center;justify-content:space-between;gap:5px}
+.params .p input[type=number]{width:58px;min-width:0}
 .params .p label{font-family:var(--mono);font-size:10.5px;color:var(--ink-soft)}
 button{font-family:var(--serif);font-size:13px;letter-spacing:.02em;
   border:1px solid var(--clay-deep);background:var(--clay);color:#f7f1e4;
@@ -252,6 +277,7 @@ button:disabled{opacity:.4;cursor:default;transform:none}
     <div id="seqScroll"></div>
     <div id="topProbeBadge"></div>
   </div>
+  <button id="hamburger" aria-label="Open menu">&#9776;</button>
   <div id="vignette"></div>
 </div>
 
@@ -290,17 +316,18 @@ button:disabled{opacity:.4;cursor:default;transform:none}
     <div class="secbody"><div class="secinner">
       <div class="btnrow" style="margin-top:6px">
         <button id="trainBtn" class="big" disabled>
-          <span class="bi">&#x25b6;</span><span id="trainLabel">Train on sequence</span>
+          <span id="trainLabel">Train on sequence</span>
         </button>
       </div>
       <div class="btnrow">
-        <button id="nextBtn" class="ghost" style="flex:1" disabled>Next task</button>
+        <button id="prevBtn" class="ghost sm" disabled>&#x25c0;</button>
+        <button id="nextBtn" class="ghost sm" disabled>&#x25b6;</button>
         <button id="freerunBtn" class="ghost sm" disabled>Free-run</button>
         <button id="resetBtn" class="ghost sm">Reset</button>
       </div>
       <canvas id="lossPlot"></canvas>
       <div class="swatchline" id="lossLegend">
-        <span class="sw" style="background:var(--clay)"></span>recon
+        <span class="sw" style="background:var(--clay)"></span>MSE
         <span class="sw" style="background:var(--blue);margin-left:4px"></span>EWC
       </div>
       <div id="trainOut" class="mono-out"></div>
@@ -316,10 +343,15 @@ button:disabled{opacity:.4;cursor:default;transform:none}
     </div>
     <div class="secbody"><div class="secinner">
       <div class="params">
-        <div class="p"><label>M (latent)</label><input id="cfgM" type="number" value="32" min="4" max="128"></div>
-        <div class="p"><label>P (ReLU)</label><input id="cfgP" type="number" value="12" min="1"></div>
-        <div class="p"><label>rank r</label><input id="cfgR" type="number" value="8" min="1"></div>
-        <div class="p"><label>epochs</label><input id="cfgEp" type="number" value="300" min="10" step="50"></div>
+        <div class="p"><label>M (latent)</label><input id="cfgM" type="number" value="48" min="4" max="128"></div>
+        <div class="p"><label>P (ReLU)</label><input id="cfgP" type="number" value="16" min="1"></div>
+        <div class="p"><label>rank r</label><input id="cfgR" type="number" value="12" min="1"></div>
+        <div class="p"><label>epochs</label><input id="cfgEp" type="number" value="400" min="10" step="50"></div>
+        <div class="row" style="margin-top:6px">
+          <label>learning rate</label>
+          <input id="cfgLR" type="range" min="0.0001" max="0.01" step="0.0001" value="0.0006">
+          <span class="val" id="lrVal">6e-4</span>
+        </div>
       </div>
       <label class="tgl"><input type="checkbox" id="useCL" checked><span class="tgl-sw"></span><span>CL regularisation</span></label>
       <label class="tgl"><input type="checkbox" id="useMerge" checked><span class="tgl-sw"></span><span>SLAO merge <button class="ibtn" data-info="slao">i</button></span></label>
@@ -349,7 +381,7 @@ button:disabled{opacity:.4;cursor:default;transform:none}
   <!-- IV. SCHEMA SPACE -->
   <section class="sec" id="secPhi">
     <div class="sechead">
-      <span class="no">IV</span><h3>Schema Space &#xb7; &#x3c6;</h3>
+      <span class="no">IV</span><h3>Schema Space</h3>
       <button class="ibtn" data-info="phi">i</button>
       <span class="tick">&#x203a;</span>
     </div>
@@ -387,15 +419,14 @@ button:disabled{opacity:.4;cursor:default;transform:none}
     </div></div>
   </section>
 
-  <!-- VI. STREAM & CONNECTION -->
+  <!-- VI. CURRICULUM -->
   <section class="sec" id="secStream">
     <div class="sechead">
-      <span class="no">VI</span><h3>Stream &amp; Connection</h3>
+      <span class="no">VI</span><h3>Curriculum</h3>
       <button class="ibtn" data-info="stream">i</button>
       <span class="tick">&#x203a;</span>
     </div>
     <div class="secbody"><div class="secinner">
-      <div class="note">Server: <code id="wsUrlLabel"></code></div>
       <div class="preset-grid">
         <button class="ghost" data-preset="standard_10">Standard 10</button>
         <button class="ghost" data-preset="lorenz_ramp">Lorenz Ramp</button>
@@ -445,6 +476,7 @@ button:disabled{opacity:.4;cursor:default;transform:none}
 </aside>
 
 <div id="status"></div>
+<div id="sideOverlay"></div>
 
 <script>
 "use strict";
@@ -461,13 +493,13 @@ window.addEventListener("unhandledrejection",e=>{
 });
 
 /* ─── constants ──────────────────────────────────── */
-const WS_URL = `ws://${location.hostname}:8765/ws`;
+const WS_URL = `${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/ws`;
 const CLS_COLOR = {0:"#3e6e8e",1:"#b98e3e",2:"#6f7355"};
 // warm orange matching orbit.html
 const DATA_COLORS = ["#c87028","#d07820","#c86418","#d08030","#b86820"];
 const PHI_N = 24;
 
-el("wsUrlLabel").textContent = WS_URL;
+// wsUrlLabel removed from UI
 
 /* ─── state ──────────────────────────────────────── */
 let ws=null, wsReady=false;
@@ -478,7 +510,7 @@ let _lastDrawnTask=-1;   // which task's attractor is currently in the 3D scene
 
 const state={
   stream:[],trained:new Set(),current:-1,
-  customTasks:[],phiHistory:[],lossData:[],
+  customTasks:[],phiHistory:[],lossData:[],taskBoundaries:[],
   oraclePhis:null,taskMSEs:{},norms:{},snapshots:{},
 };
 
@@ -515,10 +547,8 @@ const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.setClearColor(0x10151b,1);
 
-// Insert canvas as FIRST child of stage so vignette (z-index:2) and topBar (z-index:20)
-// paint on top of it. Position:absolute fills the stage via inset:0.
 const _cvs=renderer.domElement;
-_cvs.style.cssText="position:absolute;inset:0;display:block;touch-action:none;z-index:1;";
+_cvs.style.cssText="position:absolute;left:0;top:0;display:block;touch-action:none;z-index:1;";
 el("stage").insertBefore(_cvs, el("stage").firstChild);
 
 const scene=new THREE.Scene();
@@ -546,50 +576,104 @@ let lastInteract=0;
 function markInteract(){lastInteract=Date.now();}
 
 function resizeRenderer(){
-  const w=el("stage").clientWidth,h=el("stage").clientHeight;
+  const barH=el("topBar").offsetHeight;
+  const w=el("stage").clientWidth, h=el("stage").clientHeight-barH;
   if(!w||!h) return;
-  renderer.setSize(w,h,false);
+  renderer.setSize(w,h);
+  _cvs.style.top=barH+"px";
   camera.aspect=w/h; camera.updateProjectionMatrix();
 }
-// Defer first resize so layout is fully computed before measuring dimensions
 requestAnimationFrame(()=>{
   resizeRenderer();
   new ResizeObserver(resizeRenderer).observe(el("stage"));
 });
 
-// ctrl: orbit state + inertia velocities (_vt=theta velocity, _vp=phi velocity)
-const ctrl={_down:false,_mx:0,_my:0,_btn:0,_theta:.3,_phi:1.2,_r:55,_tx:0,_ty:0,
+const ctrl={_down:false,_mx:0,_my:0,_btn:0,_theta:.3,_phi:1.2,_r:80,_tx:0,_ty:0,_tz:0,
             _vt:0,_vp:0};
-const DAMP=0.88;  // inertia decay per frame (~18 frames to stop from full speed)
+const DAMP=0.88;
 
 function updateCamera(){
   ctrl._phi=Math.max(.05,Math.min(Math.PI-.05,ctrl._phi));
   camera.position.set(
     ctrl._tx+ctrl._r*Math.sin(ctrl._phi)*Math.sin(ctrl._theta),
     ctrl._ty+ctrl._r*Math.cos(ctrl._phi),
-    ctrl._r*Math.sin(ctrl._phi)*Math.cos(ctrl._theta));
-  camera.lookAt(new THREE.Vector3(ctrl._tx,ctrl._ty,0));
+    ctrl._tz+ctrl._r*Math.sin(ctrl._phi)*Math.cos(ctrl._theta));
+  camera.lookAt(new THREE.Vector3(ctrl._tx,ctrl._ty,ctrl._tz));
 }
 updateCamera();
 
+// Auto-fit camera to show the full attractor centred on screen.
+// flat is in DATA coords: [x,y,z] per point.
+// THREE.js uses axis swap: THREE.x=data_x, THREE.y=data_z (up), THREE.z=data_y (depth).
+function autoFit(flat,n){
+  if(!n) return;
+  let cx=0,cy=0,cz=0;
+  for(let i=0;i<n;i++){
+    cx+=flat[i*3];   // data_x → THREE.x
+    cy+=flat[i*3+2]; // data_z → THREE.y (up axis)
+    cz+=flat[i*3+1]; // data_y → THREE.z (depth)
+  }
+  cx/=n; cy/=n; cz/=n;
+  let maxR=0;
+  for(let i=0;i<n;i++){
+    const dx=flat[i*3]-cx, dy=flat[i*3+2]-cy, dz=flat[i*3+1]-cz;
+    maxR=Math.max(maxR,Math.sqrt(dx*dx+dy*dy+dz*dz));
+  }
+  ctrl._tx=cx; ctrl._ty=cy; ctrl._tz=cz;
+  const halfFov=camera.fov*Math.PI/360;
+  const minDim=Math.min(1,camera.aspect);
+  ctrl._r=Math.max(30,Math.min(400,maxR/(Math.tan(halfFov)*minDim*0.72)));
+  updateCamera();
+}
+
+// Multi-pointer map: supports single-finger orbit, two-finger pinch-zoom, right-click pan
+const _ptrs=new Map();
+
 renderer.domElement.addEventListener("pointerdown",e=>{
   markInteract();
-  ctrl._down=true; ctrl._mx=e.clientX; ctrl._my=e.clientY; ctrl._btn=e.button;
-  ctrl._vt=0; ctrl._vp=0;  // kill inertia when grabbing
-  renderer.domElement.setPointerCapture(e.pointerId);
+  if(e.button===2) e.preventDefault();
+  _ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  try{renderer.domElement.setPointerCapture(e.pointerId);}catch(_){}
+  if(_ptrs.size===1){
+    ctrl._down=true; ctrl._mx=e.clientX; ctrl._my=e.clientY;
+    ctrl._btn=e.button; ctrl._vt=0; ctrl._vp=0;
+  }
 });
-renderer.domElement.addEventListener("pointerup",()=>{ctrl._down=false;});
+renderer.domElement.addEventListener("pointerup",e=>{
+  _ptrs.delete(e.pointerId);
+  if(_ptrs.size===0) ctrl._down=false;
+});
+renderer.domElement.addEventListener("lostpointercapture",e=>{
+  _ptrs.delete(e.pointerId);
+  if(_ptrs.size===0) ctrl._down=false;
+});
 renderer.domElement.addEventListener("pointermove",e=>{
-  if(!ctrl._down) return; markInteract();
-  const dx=e.clientX-ctrl._mx, dy=e.clientY-ctrl._my;
-  ctrl._mx=e.clientX; ctrl._my=e.clientY;
+  if(!_ptrs.has(e.pointerId)) return;
+  markInteract();
+  const prev=_ptrs.get(e.pointerId);
+  const dx=e.clientX-prev.x, dy=e.clientY-prev.y;
+
+  if(_ptrs.size===2){
+    // pinch zoom: compare finger distance before and after this move
+    const ids=[..._ptrs.keys()];
+    const otherId=ids.find(id=>id!==e.pointerId);
+    const other=_ptrs.get(otherId);
+    const prevDist=Math.hypot(prev.x-other.x, prev.y-other.y);
+    _ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    const newDist=Math.hypot(e.clientX-other.x, e.clientY-other.y);
+    if(prevDist>1) ctrl._r=Math.max(2,Math.min(400,ctrl._r*(prevDist/newDist)));
+    updateCamera();
+    return;
+  }
+
+  _ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(!ctrl._down) return;
   if(ctrl._btn===2||e.shiftKey){
-    ctrl._tx-=dx*.04; ctrl._ty+=dy*.04;
+    const panScale=ctrl._r*0.0012;
+    ctrl._tx-=dx*panScale; ctrl._ty+=dy*panScale;
   } else {
-    // store per-event delta as velocity for inertia after release
     ctrl._vt=-dx*.008; ctrl._vp=dy*.008;
-    ctrl._theta+=ctrl._vt;
-    ctrl._phi+=ctrl._vp;
+    ctrl._theta+=ctrl._vt; ctrl._phi+=ctrl._vp;
   }
   updateCamera();
 });
@@ -598,12 +682,16 @@ renderer.domElement.addEventListener("wheel",e=>{
   ctrl._r=Math.max(2,Math.min(400,ctrl._r*Math.exp(e.deltaY*.001)));
   updateCamera(); e.preventDefault();
 },{passive:false});
-renderer.domElement.addEventListener("contextmenu",e=>e.preventDefault());
+renderer.domElement.addEventListener("contextmenu",e=>{e.preventDefault();e.stopPropagation();});
 
 function buildLine(flat,n,col,opacity){
   const geo=new THREE.BufferGeometry();
   const pos=new Float32Array(n*3);
-  for(let i=0;i<n*3&&i<flat.length;i++) pos[i]=flat[i];
+  for(let i=0;i<n;i++){
+    pos[i*3]   = flat[i*3];    // data x → THREE x
+    pos[i*3+1] = flat[i*3+2]; // data z → THREE y (up axis)
+    pos[i*3+2] = flat[i*3+1]; // data y → THREE z (depth)
+  }
   geo.setAttribute("position",new THREE.BufferAttribute(pos,3));
   const mat=new THREE.LineBasicMaterial({color:new THREE.Color(col),opacity:opacity||1,transparent:(opacity||1)<1});
   return new THREE.Line(geo,mat);
@@ -689,10 +777,16 @@ function drawLoss(){
     ctx.strokeStyle="#c5b89f33"; ctx.lineWidth=.6;
     ctx.beginPath();ctx.moveTo(x,PT);ctx.lineTo(x,H-PB);ctx.stroke();
   }
-  // axis labels
-  ctx.save();ctx.translate(8,H/2);ctx.rotate(-Math.PI/2);
-  ctx.textAlign="center";ctx.fillText("loss",0,0);ctx.restore();
-  ctx.textAlign="center";ctx.fillText("ep",PL+pw/2,H-PB+10);
+  // task boundary vertical dashed bars
+  if(state.taskBoundaries&&state.taskBoundaries.length){
+    const nEp2=state.lossData.length;
+    ctx.save();ctx.setLineDash([3,3]);ctx.strokeStyle="#c5b89f88";ctx.lineWidth=1;
+    state.taskBoundaries.forEach(b=>{
+      const x=PL+(b/(nEp2-1||1))*pw;
+      ctx.beginPath();ctx.moveTo(x,PT);ctx.lineTo(x,H-PB);ctx.stroke();
+    });
+    ctx.restore();
+  }
   // draw lines
   function drawLine(arr,col){
     ctx.beginPath();ctx.strokeStyle=col;ctx.lineWidth=1.5;
@@ -704,6 +798,10 @@ function drawLoss(){
   }
   drawLine(state.lossData.map(d=>d.recon),"#b65d3a");
   if(ewcs.some(v=>v>1e-10)) drawLine(ewcs,"#3e6e8e");
+  // keep secModel body tall enough to show chart (in case section re-opens mid-train)
+  const _sm=el("secModel");
+  if(_sm.classList.contains("open"))
+    _sm.querySelector(".secbody").style.height=_sm.querySelector(".secinner").scrollHeight+"px";
 }
 
 /* ─── phi charts ─────────────────────────────────── */
@@ -888,6 +986,12 @@ function renderTaskList(){
   e.querySelectorAll(".chip-del").forEach(b=>b.addEventListener("click",()=>{
     state.customTasks.splice(+b.dataset.i,1); renderTaskList();
   }));
+  // expand section height to show all chips
+  const sec=el("secStream");
+  if(sec.classList.contains("open")){
+    const inner=sec.querySelector(".secinner");
+    sec.querySelector(".secbody").style.height=inner.scrollHeight+"px";
+  }
 }
 el("addTaskBtn").addEventListener("click",()=>{
   const sys=el("sysSelect").value,param=parseFloat(el("paramIn").value),epochs=parseInt(el("epochsIn").value)||300;
@@ -925,11 +1029,11 @@ function wsConnect(){
     wsSend({op:"set_stream",preset:"standard_10"});
     document.querySelector('[data-preset="standard_10"]').classList.add("active");
   };
-  ws.onclose=()=>{
+  ws.onclose=(e)=>{
     wsReady=false; el("connDot").className="err";
-    setStatus("Disconnected — retrying…",true); setTimeout(wsConnect,3000);
+    setStatus(`Disconnected (code ${e.code}) — retrying…`,true); setTimeout(wsConnect,3000);
   };
-  ws.onerror=()=>setStatus("WS error",true);
+  ws.onerror=(e)=>setStatus("WS error",true);
   ws.onmessage=e=>{try{handleMsg(JSON.parse(e.data));}catch(err){console.error(err);}};
 }
 function sendInit(){
@@ -952,15 +1056,15 @@ function sendCLConfig(){
 
 /* ─── train button state machine ─────────────────── */
 function setTrainState(s){
-  const btn=el("trainBtn"),lbl=el("trainLabel"),bi=btn.querySelector(".bi");
+  const btn=el("trainBtn"),lbl=el("trainLabel");
   if(s==="idle"){
-    bi.textContent="▶"; lbl.textContent="Train on sequence";
+    lbl.textContent="Train on sequence";
     btn.classList.remove("paused"); _runAll=false; _trainActive=false;
   } else if(s==="training"){
-    bi.textContent="⏸"; lbl.textContent="Pause";
+    lbl.textContent="Pause";
     btn.classList.remove("paused"); _runAll=true;
   } else if(s==="paused"){
-    bi.textContent="▶"; lbl.textContent="Resume";
+    lbl.textContent="Resume";
     btn.classList.add("paused"); _runAll=false;
   }
 }
@@ -969,10 +1073,14 @@ function setTrainState(s){
 function handleMsg(msg){
   switch(msg.type){
 
+    case "ping":
+      break; // keepalive only, no response needed
+
     case "ready":
       setStatus("Ready \xb7 M="+msg.M+" P="+msg.P+" r="+msg.rank+" \xb7 "+msg.device);
       el("trainBtn").disabled=!state.stream.length;
       el("nextBtn").disabled=!state.stream.length;
+      el("prevBtn").disabled=!state.stream.length;
       logOut("cfgOut","ready M="+msg.M+" P="+msg.P+" r="+msg.rank+" "+msg.device,"k");
       break;
 
@@ -982,7 +1090,7 @@ function handleMsg(msg){
       state.phiHistory=[]; state.norms={}; state.taskMSEs={};
       _lastDrawnTask=-1;
       renderTopBar();
-      el("trainBtn").disabled=false; el("nextBtn").disabled=false;
+      el("trainBtn").disabled=false; el("nextBtn").disabled=false; el("prevBtn").disabled=false;
       el("freerunBtn").disabled=false; el("snapBtn").disabled=false;
       if(dataLine){scene.remove(dataLine);dataLine=null;}
       if(modelLine){scene.remove(modelLine);modelLine=null;}
@@ -990,13 +1098,8 @@ function handleMsg(msg){
       drawPhi(new Array(PHI_N).fill(0));
       setStatus("Stream: "+msg.tasks.length+" tasks");
       setTrainState("idle");
-      // Server bundles task-0 data — draw immediately, no round-trip needed
-      if(msg.xyz&&msg.xyz.length){
-        const n=msg.xyz.length/3;
-        const col=DATA_COLORS[0];
-        _lastDrawnTask=0;
-        startProgressive(normalizeXYZ(msg.xyz,n,0),n,col);
-      }
+      // Data for task-0 arrives in a follow-up "data" message automatically
+      _expectedDataTask=0;
       break;
 
     case "advance":
@@ -1007,7 +1110,9 @@ function handleMsg(msg){
         _lastDrawnTask=msg.task_idx;
         const n=msg.xyz.length/3;
         const col=DATA_COLORS[msg.task_idx%DATA_COLORS.length];
-        startProgressive(normalizeXYZ(msg.xyz,n,msg.task_idx),n,col);
+        const norm=normalizeXYZ(msg.xyz,n,msg.task_idx);
+        autoFit(norm,n);
+        startProgressive(norm,n,col);
       }
       break;
 
@@ -1025,6 +1130,8 @@ function handleMsg(msg){
       el("lossPlot").classList.add("show"); el("lossLegend").classList.add("show");
       if(state.lossData.length%5===0) drawLoss();
       setStatus("ep "+msg.ep+"/"+msg.total+"  loss="+msg.recon.toExponential(2));
+      // re-expand secModel: lossPlot was display:none when openSec measured height
+      {const _s=el("secModel");if(_s.classList.contains("open"))_s.querySelector(".secbody").style.height=_s.querySelector(".secinner").scrollHeight+"px";}
       break;
 
     case "freerun_preview":{
@@ -1043,6 +1150,9 @@ function handleMsg(msg){
     case "task_done":{
       const t=msg.t;
       _trainActive=false;
+      // record boundary for training graph vertical bar
+      if(!state.taskBoundaries) state.taskBoundaries=[];
+      state.taskBoundaries.push(state.lossData.length);
       state.trained.add(t); state.current=t; state.taskMSEs[t]=msg.mse;
       renderTopBar(); drawLoss();
       state.phiHistory.push({t,phi:msg.phi,name:msg.name});
@@ -1056,8 +1166,13 @@ function handleMsg(msg){
       setStatus("Task "+t+" done: "+msg.name);
       if(_runAll){
         const hasMore=state.stream.some((_,i)=>!state.trained.has(i));
-        if(hasMore){_trainActive=true; setTimeout(()=>wsSend({op:"next"}),150);}
-        else{setTrainState("idle"); setStatus("All tasks complete");}
+        if(hasMore){
+          _trainActive=true;
+          const lr=parseFloat(el("cfgLR").value)||6e-4;
+          setTimeout(()=>wsSend({op:"next",lr}),150);
+        } else {
+          setTrainState("idle"); setStatus("All tasks complete");
+        }
       } else {
         setTrainState("paused");
       }
@@ -1065,12 +1180,14 @@ function handleMsg(msg){
     }
 
     case "data":
-      // guard against stale responses from earlier get_data calls
       if(msg.task_idx!==_expectedDataTask) break;
       {
+        _lastDrawnTask=msg.task_idx;
         const n=msg.xyz.length/3;
         const col=DATA_COLORS[msg.task_idx%DATA_COLORS.length];
-        startProgressive(normalizeXYZ(msg.xyz,n,msg.task_idx),n,col);
+        const norm=normalizeXYZ(msg.xyz,n,msg.task_idx);
+        autoFit(norm,n);
+        startProgressive(norm,n,col);
       }
       break;
 
@@ -1104,7 +1221,7 @@ function handleMsg(msg){
 
     case "reset_ok":
       state.trained.clear(); state.current=msg.task_idx;
-      state.lossData=[]; state.phiHistory=[]; state.norms={};
+      state.lossData=[]; state.taskBoundaries=[]; state.phiHistory=[]; state.norms={};
       el("lossPlot").classList.remove("show"); el("lossLegend").classList.remove("show");
       if(dataLine){scene.remove(dataLine);dataLine=null;}
       if(modelLine){scene.remove(modelLine);modelLine=null;}
@@ -1147,30 +1264,50 @@ function l2sq(a,b){let s=0;for(let i=0;i<a.length;i++) s+=(a[i]-b[i])**2;return 
 /* ─── control buttons ────────────────────────────── */
 el("trainBtn").addEventListener("click",()=>{
   if(!wsReady||!state.stream.length) return;
+  const lr=parseFloat(el("cfgLR").value)||6e-4;
   if(!_runAll&&!_trainActive){
-    // start or resume
+    // fresh start
     setTrainState("training");
-    state.lossData=[];
+    state.lossData=[]; state.taskBoundaries=[];
     openSec(el("secModel"));
     _trainActive=true;
-    wsSend({op:"next"});
+    wsSend({op:"next",lr});
   } else if(_runAll){
-    // pause after current task
+    // pause immediately (server blocks training thread in callback)
+    wsSend({op:"pause"});
     setTrainState("paused");
+  } else if(_trainActive){
+    // paused mid-task — resume
+    setTrainState("training");
+    wsSend({op:"resume"});
   } else {
-    // task finished while paused — resume
+    // paused between tasks — start next
     setTrainState("training");
     _trainActive=true;
-    wsSend({op:"next"});
+    wsSend({op:"next",lr});
   }
 });
-el("nextBtn").addEventListener("click",()=>{
-  if(!wsReady) return;
-  _runAll=false; setTrainState("idle");
-  state.lossData=[]; openSec(el("secModel"));
-  _trainActive=true; wsSend({op:"next"});
-});
+function navTask(dir){
+  if(!wsReady||!state.stream.length) return;
+  const n=state.stream.length;
+  const next=((state.current<0?0:state.current)+dir+n)%n;
+  state.current=next;
+  if(modelLine){scene.remove(modelLine);modelLine=null;}
+  renderTopBar();
+  _expectedDataTask=next;
+  wsSend({op:"get_data",task_idx:next});
+}
+el("prevBtn").addEventListener("click",()=>navTask(-1));
+el("nextBtn").addEventListener("click",()=>navTask(1));
 el("freerunBtn").addEventListener("click",()=>{if(wsReady) wsSend({op:"freerun",steps:3000});});
+el("hamburger").addEventListener("click",()=>{
+  const open=el("side").classList.toggle("open");
+  el("sideOverlay").style.display=open?"block":"none";
+});
+el("sideOverlay").addEventListener("click",()=>{
+  el("side").classList.remove("open");
+  el("sideOverlay").style.display="none";
+});
 el("resetBtn").addEventListener("click",()=>{
   _runAll=false; _trainActive=false; setTrainState("idle");
   wsSend({op:"reset"});
@@ -1180,6 +1317,10 @@ el("applyCfgBtn").addEventListener("click",()=>{
   logOut("cfgOut","Config applied","k");
 });
 el("lamIn").addEventListener("input",()=>{el("lamVal").textContent=parseFloat(el("lamIn").value).toFixed(1);});
+el("cfgLR").addEventListener("input",()=>{
+  const v=parseFloat(el("cfgLR").value);
+  el("lrVal").textContent=v<0.001?(v*1e4).toFixed(1)+"e-4":v.toFixed(4);
+});
 el("adaptiveChk").addEventListener("change",()=>{
   el("adaptiveExtra").style.display=el("adaptiveChk").checked?"block":"none";
 });
@@ -1350,7 +1491,7 @@ $$\phi^{(e)} = \frac{1}{T}\sum_{t=1}^T \log\!\left\|J_t\, v_t\right\|$$
 
   config:["PIAGETS Config Guide",R`
 <h4>Architecture: M, P, r</h4>
-<p>$M$: total latent dimension. $P$: ReLU units &#x2014; creates up to $2^P$ linear regions. $r$: LoRA rank. For 3D attractors, $M=32, P=12, r=8$ gives good capacity. Increase $M$ and $P$ for higher-dimensional systems. Rule of thumb: $P \geq 8$ for chaotic systems (need several hundred active regions to faithfully represent a butterfly attractor).</p>
+<p>$M$: total latent dimension. $P$: ReLU units &#x2014; creates up to $2^P$ linear regions. $r$: LoRA rank. For 3D attractors, $M=48, P=16, r=12$ gives good capacity. Increase $M$ and $P$ for higher-dimensional systems. Rule of thumb: $P \geq 8$ for chaotic systems (need several hundred active regions to faithfully represent a butterfly attractor).</p>
 <h4>Fisher type</h4>
 <p><b>Signature-Fisher</b> (default): stable for chaotic systems. <b>Prediction-Fisher</b>: standard EWC, numerically explosive for high-$\lambda_{\max}$ attractors but faster to compute.</p>
 <h4>SLAO toggles</h4>
@@ -1388,13 +1529,27 @@ function openInfo(key){
   const e=INFO[key]; if(!e) return;
   _currentInfoKey=key;
   el("infoTitle").textContent=e[0];
-  el("infoBody").innerHTML=e[1];
   el("infoPane").classList.add("show");
   el("infoPane").setAttribute("aria-hidden","false");
-  ensureKatex(renderMath);
+  if(key==="intro"){
+    el("infoBody").innerHTML="<p style='color:var(--ink-soft)'>Loading…</p>";
+    fetch("/overview.html").then(r=>r.text()).then(html=>{
+      el("infoBody").innerHTML=html;
+      ensureKatex(renderMath);
+    });
+  } else {
+    el("infoBody").innerHTML=e[1];
+    ensureKatex(renderMath);
+  }
 }
 el("infoClose").addEventListener("click",closeInfo);
-document.addEventListener("keydown",e=>{if(e.key==="Escape") closeInfo();});
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){
+    closeInfo();
+    el("side").classList.remove("open");
+    el("sideOverlay").style.display="none";
+  }
+});
 function closeInfo(){
   _currentInfoKey=null;
   el("infoPane").classList.remove("show");

@@ -78,9 +78,12 @@ class ALRNN(nn.Module):
     # ── analysis ─────────────────────────────────────────────────────────────
 
     @torch.no_grad()
-    def free_run(self, z0_obs, n, return_patterns=False):
-        z = torch.zeros(self.M, dtype=self.A.dtype)
-        z[:self.d] = torch.as_tensor(z0_obs, dtype=self.A.dtype)
+    def free_run(self, z0_obs, n, return_patterns=False, z0_full=None):
+        if z0_full is not None:
+            z = torch.as_tensor(z0_full, dtype=self.A.dtype).clone()
+        else:
+            z = torch.zeros(self.M, dtype=self.A.dtype)
+            z[:self.d] = torch.as_tensor(z0_obs, dtype=self.A.dtype)
         out  = np.empty((n, self.d), dtype=np.float64)
         pats = np.empty((n, self.P), dtype=np.int8) if return_patterns else None
         for t in range(n):

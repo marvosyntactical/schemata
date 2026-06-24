@@ -280,7 +280,7 @@ The implementation lives in [`piagets.py`](piagets.py) and [`alrnn.py`](alrnn.py
 
 ### 8.1 AL-RNN with SLAO factorization (from [`alrnn.py`](alrnn.py))
 
-The model is an AL-RNN with $M$ latent units, $P$ nonlinear (ReLU) units, $d$ observed dimensions, and LoRA rank $r$ (default $r = P$):
+The model is an AL-RNN with $M$ latent units, $P$ nonlinear (ReLU) units, $d$ observed dimensions, and LoRA rank $r$ (default $r = P$; current experiments use $r = 12 = 2P$ — see §9.1):
 
 $$z_{t+1} = A \odot z_t + g(z_t)\,W_A^\top W_B^\top + h, \qquad g(z)_i = \begin{cases} \mathrm{relu}(z_i) & i < P \\ z_i & i \geq P \end{cases}$$
 
@@ -380,11 +380,11 @@ $$W_B^{(0)}_t = W_B^{(t-1)} \in \mathbb{R}^{M \times r} \quad \text{(carry previ
 
 **Intuition**: $W_A$ projects the full $M$-dim activation $g(z)$ down to rank-$r$ space. After task $t-1$, its row-space is some $r$-dimensional subspace of $\mathbb{R}^M$. QR on $W_A^\top$ finds an orthonormal basis for that subspace; $Q^\top$ re-initialises $W_A$ to have those orthonormal rows, giving a canonical re-entry point that is close to the previous task's subspace but with zero redundancy between rows. $W_B$ is held fixed because it is the parameter accumulated across tasks by EMA (SLAO line 7).
 
-### 8.7 EWC loss on $W_B$ only — `PIAGETSContinual.ewc_loss`
+### 8.7 EWC loss on $W_B$, $A$, and $h$ — `PIAGETSContinual.ewc_loss`
 
-$$\mathcal{L}_\text{EWC}(\theta) = \lambda_\text{EWC} \sum_{i,j} \hat{F}_{ij}^{W_B} \cdot \bigl(W_{B,ij} - \hat{W}_{B,ij}\bigr)^2$$
+$$\mathcal{L}_\text{EWC}(\theta) = \lambda_\text{EWC} \left[\sum_{i,j} \hat{F}_{ij}^{W_B} \cdot \bigl(W_{B,ij} - \hat{W}_{B,ij}\bigr)^2 + \sum_i \hat{F}_i^{A} \cdot (A_i - \hat{A}_i)^2 + \sum_i \hat{F}_i^{h} \cdot (h_i - \hat{h}_i)^2\right]$$
 
-where $\hat{W}_B$ is the EMA-consolidated anchor and $\hat{F}^{W_B}$ is the EMA-consolidated Fisher for $W_B$ (both $\in \mathbb{R}^{M \times r}$). Only $W_B$ is protected — $W_A$, $A$, and $h$ are unconstrained. This is deliberate: $W_A$ is re-initialised by `qr_init` at every task boundary, so penalising it is counterproductive; $W_B$ carries the cumulative task history and is what SLAO's EMA merge is protecting.
+where $\hat{W}_B$, $\hat{A}$, $\hat{h}$ are EMA-consolidated anchors and $\hat{F}^{W_B}$, $\hat{F}^A$, $\hat{F}^h$ are EMA-consolidated Fishers, all maintained by `store_task`. The penalty covers $W_B$, $A$, and $h$; $W_A$ is unconstrained — it is re-initialised by `qr_init` at every task boundary, so penalising it is counterproductive. The signature-Fisher is computed for all named parameters (including $A$ and $h$) and stored and normalised independently for each.
 
 **Fisher and anchor consolidation** (EMA, done inside `store_task`):
 
@@ -412,55 +412,86 @@ Called after fine-tuning completes on task $t$ with the just-trained parameters 
 
 5. **Save** $W_B^{(t)} \to $ `_B_prev` and $W_A^{(t)} \to$ `_A_prev` for next task's `qr_init`.
 
-6. **Compute** $\phi(\theta_t) = \texttt{diff\_phi}(\theta_t)$.  Then, if `probe_for_next=True`, run `schema_probe` against the **currently stored** `_task_phis` (not yet including task $t$). Cache the result as `_next_lam_ewc` for the next task. **Critically: the probe runs before step 7**, so the current task's $\phi$ is not yet in the library — otherwise the probe would always find distance 0 to itself and always return ASSIMILATION.
+6. **Compute** $\phi(\theta_t) = \texttt{diff\_phi}(\theta_t)$. Update per-class `_phi_stars` via EMA (Option 3, if active).
 
 7. **Append** $(c_t, \phi(\theta_t))$ to `_task_phis` for future schema comparisons.
+
+Note: the "probe-for-next" mechanism (caching `_next_lam_ewc` inside `store_task`) is **not implemented** in the current code. The adaptive $\lambda$ decision is made in the experiment loop (see §8.10).
 
 **Inference** (`restore_merged`): set $W_B \leftarrow B_\text{merge}$, $W_A \leftarrow A_\text{merge}$ so the model uses the accumulated cross-task LoRA.
 
 ### 8.9 Training loop — `train_with_ewc`
 
-$$\mathcal{L}_\text{total} = \mathcal{L}_\text{recon}(\theta;\, \alpha_e) + \mathcal{L}_\text{EWC}(\theta) + \mathcal{L}_\phi(\theta)$$
+$$\mathcal{L}_\text{total} = \mathcal{L}_\text{recon}(\theta;\, \alpha_e) + \lambda_\text{scale}(e)\cdot\mathcal{L}_\text{EWC}(\theta) + \mathcal{L}_\phi(\theta)$$
 
 $\mathcal{L}_\text{recon}$ is GTF-BPTT MSE plus the region-entropy regularizer $\lambda_\text{reg} \cdot H_\text{reg}$. The GTF coefficient is linearly annealed: $\alpha_e = \alpha_0 + (\alpha_\text{end}-\alpha_0) e/(E-1)$ from $\alpha_0=0.5$ to $\alpha_\text{end}=0.05$. $\mathcal{L}_\phi = 0$ by default; activated for the `piagets_phi_reg` and `piagets_combined` variants (§8.12). Optional dual-LoRA gradient masking (§8.13) is applied after `loss.backward()` and before `opt.step()` for the `piagets_dual_lora` and `piagets_combined` variants.
 
-### 8.10 Schema probe and adaptive $\lambda$ — `PIAGETSContinual.schema_probe`
+**Warmup and annealing schedule** (current default: `n_warmup=30`, `anneal_frac=1/3`): The EWC penalty is modulated by a per-epoch scale $\lambda_\text{scale}(e) \in [0,1]$ with three phases (applied only for $t \geq 1$; task 0 always trains without EWC):
 
-The probe compares the current model's $\phi$ against known class centroids to decide whether the upcoming task belongs to an existing schema (assimilation) or is new (accommodation):
+Let $E_\text{post} = E - n_\text{warmup}$, $E_\text{anneal} = \lfloor E_\text{post} \cdot \text{anneal\_frac} \rceil$, $E_\text{end} = E - E_\text{anneal}$:
 
-1. Compute $\phi_\text{now}$ as the mean of `n_avg` calls to `diff_phi`.
+$$\lambda_\text{scale}(e) = \begin{cases} 0 & e < n_\text{warmup} \quad\text{(warmup)} \\ 1 & n_\text{warmup} \leq e < E_\text{end} \quad\text{(full EWC)} \\ 1 - \frac{e - E_\text{end} + 1}{E_\text{anneal}} & e \geq E_\text{end} \quad\text{(anneal to 0)} \end{cases}$$
 
-2. For each known class $c$, compute the centroid $\bar\phi_c = \mathrm{mean}_{(c',\phi') \in \text{task\_phis},\, c'=c} \phi'$.
+**Warmup phase** ($e < n_\text{warmup}$): EWC is off and $\nabla_{W_B}$ is zeroed after each backward pass (freezing $W_B$), while only $W_A$, $A$, and $h$ adapt. This gives $W_A$ time to settle after QR-reinit before EWC forces begin, preventing the consolidated anchor from being stressed by a transiently-distorted model.
 
-3. Compute the mean **intra-class spread** $\sigma_\text{intra} = \mathrm{mean}_i \|\phi_i - \bar\phi_{c_i}\| / \sigma_\phi$ (mean φ-distance from each stored task to its own class centroid).
+**EWC phase** ($n_\text{warmup} \leq e < E_\text{end}$): standard EWC training at full $\lambda$.
 
-4. Find nearest class: $c^* = \arg\min_c \|\phi_\text{now} - \bar\phi_c\| / \sigma_\phi$, distance $d^*$.
+**Annealing phase** ($e \geq E_\text{end}$): $\lambda_\text{scale}$ decays linearly to 0, releasing the model to minimise $\mathcal{L}_\text{recon}$ freely. This closes the MSE gap between CL methods and the non-CL baseline at the end of each task. Note that `store_task` is called on the fully-annealed model — the Fisher and EMA anchors are computed from a near-unconstrained checkpoint. This has the side-effect of storing φ embeddings with larger within-class variance (see §9.9 discussion of probe disruption).
 
-5. **Assimilation** if $d^* < \sigma_\text{schema} \cdot \max(\sigma_\text{intra}, 0.1)$; else **accommodation**.
+### 8.10 Adaptive $\lambda$ — two probe methods
 
-6. Return $(\lambda_\text{assim}, \text{"assimilation"}, c^*)$ or $(\lambda_\text{accom}, \text{"accommodation"}, \text{None})$.
+**Currently used: `probe_from_task_start`** (MSE-ratio probe, "Fix 1")
 
-**Probe-for-next timing** (the correct approach): The probe runs inside `store_task`, **before** appending the current task's $\phi$ to `_task_phis`. This ordering is critical: if the current task's $\phi$ were appended first, the probe would find it with distance 0 and always return ASSIMILATION. By probing before append, we ask "does this just-trained model's $\phi$ resemble any **previously known** schema?" The result is cached as `_next_lam_ewc`. At the start of the next task, `qr_init` applies this cached $\lambda$ rather than probing the pre-initialisation (wrong-task) model. This ensures the probe measures the schema of the task we just learned — which is the relevant information for deciding how protective to be while learning the next task.
+In the experiment loop, after `qr_init` re-initialises $W_A$, the merged model is evaluated on the incoming data:
+
+$$\text{ratio} = \frac{\text{MSE}_\text{new}}{\text{MSE}_\text{max\_seen}}$$
+
+- $\text{ratio} < \tau_\text{MSE}$ → **assimilation** (model already covers this schema; $\tau_\text{MSE} = 10$)
+- $\text{ratio} \geq \tau_\text{MSE}$ → **accommodation** (new territory, allow plasticity)
+
+`MSE_max_seen` is the maximum end-of-training MSE recorded across all previous tasks. The probe requires no $\phi$ computation — it uses the reconstruction loss directly as a proxy for schema familiarity.
 
 **Adaptive rule:**
-- Assimilation detected → $\lambda_\text{EWC} \leftarrow \lambda_\text{assim} = 20$ (high protection: don't destroy a confirmed existing schema)
-- Accommodation detected → $\lambda_\text{EWC} \leftarrow \lambda_\text{accom} = 4$ (low protection: allow plasticity for genuinely new structure)
+- Assimilation detected → $\lambda_\text{EWC} \leftarrow \lambda_\text{assim} = 10$ (high protection)
+- Accommodation detected → $\lambda_\text{EWC} \leftarrow \lambda_\text{accom} = 2$ (allow plasticity)
 
-**Current limitation**: the probe is based on the just-trained model's φ, which reflects what was just learned, not what will be learned next. If tasks t and t+1 are different classes, the probe correctly identifies class $c_t$ and we get the right λ for protecting $c_t$ during $t+1$ training. But the probe can't know whether $t+1$ will be in the same class — it only tells us how to protect the past. The correct framing is: *"we've confirmed we're in class X — apply high λ to protect X from the upcoming task"*, which is exactly what probe-for-next does.
+**Also available (not currently called by piagets_adaptive): `schema_probe`** (φ-based)
+
+`schema_probe` compares the current model's $\phi$ against stored class centroids:
+
+1. Compute $\phi_\text{now}$ as the mean of `n_avg` calls to `diff_phi`.
+2. For each known class $c$, compute centroid $\bar\phi_c$.
+3. Compute mean intra-class spread $\sigma_\text{intra}$.
+4. Find nearest class $c^* = \arg\min_c \|\phi_\text{now} - \bar\phi_c\| / \sigma_\phi$, distance $d^*$.
+5. **Assimilation** if $d^* < \sigma_\text{schema} \cdot \max(\sigma_\text{intra}, 0.1)$; else **accommodation**.
+
+This method is implemented in `PIAGETSContinual.schema_probe` but is not called by the adaptive variants in the current `validate_piagets.py`; it is superseded by `probe_from_task_start` (which proved more reliable in early runs due to the single-example threshold problem described in §10.2).
 
 ### 8.11 Evaluation metrics — `validate_piagets.py`
 
-**Performance matrix**: after training task $t$,
-$$R_{t,i} = -\,\phi\text{-dist}\!\left(\phi(\theta_t),\; \phi_i^\text{ora}\right), \quad i \leq t, \qquad \phi\text{-dist}(a, b) = \left\|\frac{a - b}{\sigma_\phi}\right\|_2$$
-Higher $R_{t,i}$ = model at step $t$ is closer to oracle $i$'s attractor in $\phi$-space.
+Two lower-triangular performance matrices (indexed $t \geq i$) are tracked after each task:
 
-**BWT** (backward transfer): $\mathrm{BWT} = \frac{1}{T-1}\sum_{i=0}^{T-2}(R_{T-1,i} - R_{i,i})$. Negative = forgetting; zero = perfect retention.
+**MSE matrix**: $\text{MSE}_{t,i}$ = reconstruction MSE of the merged model after training task $t$, evaluated on 20 random length-100 batches from task $i$'s data. Lower = better fit.
 
-**FWT** (forward transfer): $\mathrm{FWT} = \frac{1}{T-1}\sum_{i=1}^{T-1}(R_{i,i} - R^\text{rand}_i)$ vs an untrained random-init baseline. Negative here is expected (the model initialises cold for each method; no warm-start benefit).
+**$d\varphi$ matrix**: $d\varphi_{t,i} = \phi\text{-dist}(\phi(\theta_t),\, \phi_i^\text{ora})$ with $\phi\text{-dist}(a,b) = \|(a-b)/\sigma_\phi\|_2$, where $\phi_i^\text{ora}$ is the oracle model's signature for task $i$ and $\sigma_\phi$ is the per-component standard deviation across all oracle models. Positive; lower = model closer to oracle in $\phi$-space.
 
-**rec\_ora** (nearest-task-oracle recognition): at each step $t$, find $i^* = \arg\min_{i \leq t}\phi\text{-dist}(\phi(\theta_t), \phi^\text{ora}_i)$; predict class $= \text{CLASSES}[i^*]$; score 1 if correct. Averaged over $T$ steps. This is the unbiased metric.
+**mse\_BWT** (MSE backward transfer):
+$$\text{mse\_BWT} = \frac{1}{T-1}\sum_{i=0}^{T-2}(\text{MSE}_{T-1,i} - \text{MSE}_{i,i})$$
+Positive = the model degrades on past tasks between training time and end of stream (forgetting). Negative = backward improvement (accumulated SLAO merging can improve past-task fit over time, as seen in `piagets_inv`).
 
-**rec\_cen** (nearest-class-centroid recognition): predict class $= \arg\min_c \phi\text{-dist}(\phi(\theta_t), \bar\phi_c^\text{ora})$ where $\bar\phi_c^\text{ora}$ is the mean oracle $\phi$ for class $c$. Biased when intra-class $\phi$-variance is high (heterogeneous parameterisations produce centroids that don't represent any individual task well).
+**dphi\_BWT** ($d\varphi$ backward transfer):
+$$d\varphi\text{-BWT} = \frac{1}{T-1}\sum_{i=0}^{T-2}(d\varphi_{T-1,i} - d\varphi_{i,i})$$
+Positive = φ-space forgetting (model drifts further from oracle over time); negative = φ-space backward improvement.
+
+**mse** (mean diagonal): $\frac{1}{T}\sum_{t=0}^{T-1}\text{MSE}_{t,t}$ — average training-time MSE across all tasks. Unaffected by forgetting; measures how well the model fits each task immediately after training.
+
+**dphi** (mean diagonal $d\varphi$): $\frac{1}{T}\sum_{t=0}^{T-1}d\varphi_{t,t}$ — average training-time distance to oracle in $\phi$-space.
+
+**ARI** (Adjusted Rand Index): between predicted class labels (nearest centroid of stored per-task $\phi$ embeddings from `store_task`) and true class labels, over all $T$ tasks. Measures how well the CL model's learned representations cluster into the three schema classes. Computed with a pure-Python implementation.
+
+**Per-class convergence** (cLor, cTor, cVdP): mean `conv_half_epochs` per attractor class. `conv_half_epochs` for a task is the number of training epochs until MSE crosses the midpoint between its value at the start of training and its final value. Lower = faster convergence. Lorenz typically requires ~300 epochs (chaotic attractor); Torus ~120; VdP ~70 for standard PIAGETS. Warmup epochs count toward `conv_half_epochs`, which can create an artifact for fast tasks: VdP models can converge within the warmup phase ($e < 30$) since $W_A$ adapts during warmup even with $W_B$ frozen.
+
+**c\_ass / c\_acc**: mean `conv_half_epochs` for assimilation episodes (same schema class, higher $\lambda_\text{assim}$) and accommodation episodes (new class, lower $\lambda_\text{accom}$). `nan` if no episodes of that type occurred.
 
 ### 8.12 φ-Functional Regularization variant — `piagets_phi_reg`
 
@@ -490,7 +521,7 @@ Option 4: partition $W_B$ columns into a linear-core block (Lorenz tasks) and a 
 | linear-core | $0:r_\text{lin}$ (cols 0–2) | $0:r_\text{lin}$ (rows 0–2) | Lorenz (class 0) |
 | nonlinear-coupling | $r_\text{lin}:r$ (cols 3–5) | $r_\text{lin}:r$ (rows 3–5) | Torus, VdP (classes 1, 2) |
 
-**Regime routing**: assigned by class label in `validate_piagets.py` (class 0 → "linear"; classes 1/2 → "nonlinear"). The label-free alternative uses `detect_regime(model)`: compute $\phi^{(c)}.mean()$ (soft activation variability); if $< 0.05$ → "linear", else → "nonlinear".
+**Regime routing**: assigned by class label in `validate_piagets.py` (class 0 → "linear"; classes 1/2 → "nonlinear"). The label-free alternative uses `detect_regime(model)`: extract $\phi^{(c)}$ at indices $[(M{-}P){+}P : (M{-}P){+}2P] = [M : M{+}P]$ (this equality holds since $(M{-}P)+P = M$), compute the mean; if $< 0.05$ → "linear", else → "nonlinear".
 
 **Gradient masking** (in `apply_block_mask`, called after `loss.backward()` before `opt.step()`):
 - Linear regime: $\nabla_{W_B}[\;:,\; r_\text{lin}:] \leftarrow 0$, $\nabla_{W_A}[r_\text{lin}:\;,\; :] \leftarrow 0$
@@ -504,19 +535,27 @@ Option 4: partition $W_B$ columns into a linear-core block (Lorenz tasks) and a 
 
 ### 9.0 Metric definitions
 
-All metrics derive from the performance matrix $R \in \mathbb{R}^{T \times T}$ (lower-triangular; $R_{t,i}$ defined only for $i \leq t$):
-$$R_{t,i} = -\phi\text{-dist}\!\left(\phi(\theta_t),\; \phi_i^\text{ora}\right), \qquad \phi\text{-dist}(a,b) = \left\|\frac{a-b}{\sigma_\phi}\right\|_2$$
-Higher (less negative) $R_{t,i}$ means the CL model at step $t$ is closer to oracle $i$'s attractor in normalised φ-space.
+Two lower-triangular performance matrices are tracked (see §8.11):
+
+| Symbol | Definition |
+|---|---|
+| $\text{MSE}_{t,i}$ | Reconstruction MSE after task $t$, evaluated on task $i$'s data ($i \leq t$). Lower = better. |
+| $d\varphi_{t,i}$ | $\phi$-dist to oracle $i$ after task $t$: $\|({\phi(\theta_t) - \phi_i^\text{ora}})/{\sigma_\phi}\|_2$. Lower = closer to oracle. |
+
+Summary metrics reported per method:
 
 | Metric | Formula | What it measures |
 |---|---|---|
-| **BWT** | $\frac{1}{T-1}\sum_{i=0}^{T-2}(R_{T-1,i}-R_{i,i})$ | *Backward transfer*: did the model's fit to past tasks improve (positive) or degrade (negative) between training time and the end of the stream? Negative = forgetting; zero = perfect retention. |
-| **FWT** | $\frac{1}{T-1}\sum_{i=1}^{T-1}(R_{i,i}-R_i^\text{rand})$ | *Forward transfer*: does prior task training help on the current task compared to a random-init model? |
-| **rec\_ora** | $\frac{1}{T}\sum_t\mathbb{1}[\text{CLASSES}[i^*]=c_t],\; i^*=\arg\min_{i\leq t}\phi\text{-dist}(\phi_t,\phi_i^\text{ora})$ | *Nearest-task-oracle recognition*: at each step, predict class by finding the closest individual oracle in φ-space. Unbiased — avoids centroid-averaging artefacts. |
-| **rec\_cen** | $\frac{1}{T}\sum_t\mathbb{1}[\hat c=c_t],\;\hat c=\arg\min_c\phi\text{-dist}(\phi_t,\bar\phi_c^\text{ora})$ | *Nearest-class-centroid recognition*: predict class by distance to the mean oracle φ per class. Biased when within-class φ-variance is high. |
-| **R\_diag mean** | $\frac{1}{T}\sum_{t=0}^{T-1}R_{t,t}$ | *Mean training-time performance*: how well the model fits each task immediately after training on it. Unaffected by forgetting dynamics; lower (more negative) values indicate over-regularisation or insufficient training. |
+| **mse\_BWT** | $\frac{1}{T-1}\sum_{i<T-1}(\text{MSE}_{T-1,i}-\text{MSE}_{i,i})$ | MSE forgetting. Positive = model degrades on past tasks. Negative = backward improvement. |
+| **dphi\_BWT** | $\frac{1}{T-1}\sum_{i<T-1}(d\varphi_{T-1,i}-d\varphi_{i,i})$ | φ-space forgetting. Positive = model drifts further from oracles over time. |
+| **mse** | $\frac{1}{T}\sum_t \text{MSE}_{t,t}$ | Mean training-time MSE. Unaffected by forgetting. Measures reconstruction quality. |
+| **dphi** | $\frac{1}{T}\sum_t d\varphi_{t,t}$ | Mean training-time φ-distance to oracle. Measures attractor fidelity. |
+| **ARI** | Adjusted Rand Index of stored-φ clustering vs true classes | How well learned representations cluster into schema classes (Lorenz/Torus/VdP). |
+| **cLor/cTor/cVdP** | Mean conv\_half\_epochs per class | Convergence speed by attractor type. Lower = faster. |
+| **c\_ass / c\_acc** | Mean conv\_half\_epochs for assimilation/accommodation episodes | How quickly the model adapts when schema is recognised vs new. |
+| **wtime** | Wall-clock time for full 10-task stream | Computational cost. |
 
-**BWT metric bias**: BWT rewards methods that under-fit at training time. A method with high EWC λ fits task $i$ poorly (low $R_{i,i}$, large magnitude), leaving more room for apparent "backward improvement" at final evaluation even when the final absolute performance $R[T-1,i]$ is comparable. Methods with adaptive λ that fit tasks well initially (high $R_{i,i}$, small magnitude) show smaller positive BWT credit for the same final quality. R\_diag mean and final absolute values $R[T-1,i]$ are more reliable quality indicators.
+**Note on earlier runs (§9.3–9.8)**: These sections use the earlier metric convention where the central matrix was $R_{t,i} = -d\varphi_{t,i}$ (negative $\phi$-distance, higher = better) and BWT/FWT were computed from $R$. The current convention (§9.9 onward) uses $d\varphi$ directly (positive, lower = better) and adds MSE as a primary metric. The qualitative interpretation is unchanged: SLAO-based methods retain φ-structure better than baseline; the adaptive probe selects assimilation vs accommodation.
 
 ### 9.1 Task stream (10-task, 3-class)
 
@@ -541,7 +580,7 @@ Class counts: Lorenz×4, Torus×3, VdP×3. Consecutive tasks always differ in cl
 
 **VdP parameter choice**: μ ∈ {1.5, 3.0, 5.0} spread widely to maximise within-VdP intra-class variability and separate VdP from Torus in φ-space.
 
-**Hyperparameters**: M=16, P=6, r=P=6, N\_data=8000, EP\_oracle=300, SEQ\_LEN=100, LR=1e-3, REG\_LAM=0.05, λ\_EWC=10, λ\_assim=20, λ\_accom=4, BETA\_MERGE=5, σ\_schema=2.0.
+**Hyperparameters (current code — matches §9.8 run 3)**: M=16, P=6, r=12, N\_data=8000, EP\_oracle=300, EP\_task0=300, EP\_fine\_Lor=300, EP\_fine\_Tor=350, EP\_fine\_VdP=200, SEQ\_LEN=100, LR=1e-3, REG\_LAM=0.05, λ\_EWC=5, λ\_assim=10, λ\_accom=2, σ\_schema=2.0, SIG\_FISHER\_KW={n\_avg=3, T\_warmup=100, T\_track=200, β=10}. Note: `BETA_MERGE=5` is defined in `validate_piagets.py` but is not passed to `PIAGETSContinual` or used in the merge formula.
 
 **Note on Lorenz models under GTF-BPTT**: All Lorenz oracle models collapse to a 1-region regime (n\_regions=1, all P ReLU units remain in fixed gate state throughout the trajectory). The Lyapunov time of Lorenz is ~1.1 time units; with dt=0.05 and seq\_len=100, gradient must propagate across ~5 Lyapunov times (≈e^{4.5}≈90× divergence), causing the model to retreat to all-active (z\_i > 0 always) ReLU operation. The φ signature is still highly distinctive: φ^{(b)}_i ≈ 0.88 (high constant activation), φ^{(c)}_i ≈ 0 (no switching), φ^{(d)} ≈ 1.25 (high topological entropy of the all-active transition), φ^{(e)} ≈ −0.03 (contracting in linear regime).
 
@@ -717,6 +756,10 @@ t=9  Lor    −8.672   −10.090   −10.996    −7.737   −10.478    −9.873
 
 ### 9.7 New variants — run with φ-reg and dual LoRA (σ=2.0)
 
+> **Note on current METHODS dict**: The methods `piagets_phi_reg`, `piagets_dual_lora`, `piagets_combined`, `piagets_class_ewc`, and `piagets_phi_only` are implemented in `piagets.py` but have been **removed from the METHODS dict** in the current `validate_piagets.py`. The current script runs only six methods: `vanilla` (fresh model per task, for reference), `baseline`, `pred_ewc`, `pred_ewc_adaptive`, `piagets`, `piagets_adaptive`. The results below come from earlier runs that included the additional variants.
+
+
+
 Full 8-method run adding `piagets_phi_reg` (§8.12), `piagets_dual_lora` (§8.13), and `piagets_combined` (both + adaptive λ). Hyperparameters unchanged from §9.6 except new: λ\_phi=0.05, r\_lin=3, T\_warmup=100, T\_track=100 for φ-reg rollout.
 
 | Method | BWT | FWT | rec\_ora | rec\_cen | R\_diag mean |
@@ -834,27 +877,67 @@ t=9      -9.101   -10.813   -10.845   -10.106   -11.867   -13.407    -9.587   -1
 
 ---
 
+### 9.9 Run 8: warmup+annealing, MSE metrics, ARI, per-class convergence
+
+**New features relative to prior runs**: `n_warmup=30`, `anneal_frac=1/3`, MSE-based backward transfer (`mse_BWT`), φ-BWT renamed `dphi_BWT` with sign flipped (positive = forgetting), ARI for clustering quality, per-class convergence (cLor/cTor/cVdP), 5 methods.
+
+**Hyperparameters**: M=16, P=6, d=3, rank r=P=6; $\lambda_\text{EWC}=5$, $\lambda_\text{assim}=10$, $\lambda_\text{accom}=2$, $\sigma_\text{schema}=2.0$; EP\_Lor=300, EP\_Tor=350 (task 8: 350), EP\_VdP=200; SIG\_FISHER\_KW: n\_avg=3, T\_warmup=100, T\_track=200, β=10.
+
+**Results table** (Task stream: Lor\_r28, Tor\_0.382, VdP\_m1.5, Lor\_r35, Tor\_0.618, VdP\_m3.0, Lor\_r40, VdP\_m5.0, Tor\_0.271, Lor\_r45):
+
+| method | mse\_BWT | dphi\_BWT | mse | dphi | ARI | cLor | cTor | cVdP | c\_acc | wtime |
+|---|---|---|---|---|---|---|---|---|---|---|
+| baseline | +0.601 | +5.432 | 0.2747 | 11.004 | 0.353 | 300 | 118 | 70 | 250 | 212s |
+| piagets | +0.464 | −0.349 | **0.2618** | 9.740 | 0.348 | 300 | 120 | 69 | 250 | 229s |
+| piagets\_adaptive | +0.460 | +0.559 | 0.2838 | **8.971** | 0.178 | 300 | 120 | 4 | 153 | 293s |
+| piagets\_inv | **+0.038** | −0.357 | 0.3009 | 10.697 | 0.178 | 300 | 120 | 70 | 250 | 234s |
+| piagets\_ada\_nolora | +0.407 | +4.661 | 0.2911 | 9.340 | **0.384** | 300 | 119 | 134 | 250 | 291s |
+
+`c_ass` is `nan` for all methods (no assimilation episodes fired). Bold = best per column.
+
+**PIAGETS beats baseline on MSE (0.2618 vs 0.2747)**: The warmup+annealing schedule closes the MSE gap that persisted in earlier runs. During the annealing phase EWC fades to zero, allowing the model to reach near-unconstrained MSE by end of task. Yet because the Fisher and SLAO merge happen on the annealed model's weights, the cross-task retention (dphi\_BWT=−0.35 vs baseline +5.43) remains intact. Standard PIAGETS achieves the primary goal: lower forgetting, lower MSE than baseline.
+
+**Per-task MSE diagonal (piagets)**: 0.522, 0.117, 0.025, 0.609, 0.102, 0.031, 0.572, 0.040, 0.072, 0.529. Lorenz tasks dominate the diagonal (≈0.5–0.6 MSE); VdP tasks are near-zero (≈0.02–0.04). The Lor\_r45 task (t=9) starts from a very poor initial MSE (mse\_start ≈ 17.99 after QR-reinit) but converges to comparable final MSE, illustrating SLAO's recovery ability even from extreme initial conditions.
+
+**piagets\_inv near-zero mse\_BWT (+0.038) is misleading**: $\text{MSE}_{i,i}$ is measured on the post-restore merged model immediately after task $i$ trains. Because inverted Fisher EWC releases high-$F_{ij}$ $W_B$ elements (those most tied to past-task structure), SLAO's EMA merge then re-accumulates those elements across tasks. So $\text{MSE}_{i,i}$ is inflated (model partially lost its fit to task $i$ during inv-EWC training), while $\text{MSE}_{T-1,i}$ benefits from subsequent SLAO accumulation of VdP structure. For VdP\_m3.0 (t=5), the per-task BWT contribution is −1.127 (backward improvement!) because three subsequent VdP tasks cause SLAO to accumulate strong VdP patterns into $B_\text{merge}$, accidentally making the final model fit task 5 better than the task-5 model did itself. The mean mse=0.301 (highest among all methods) confirms that training-time fit is genuinely worse.
+
+**piagets\_adaptive probe disruption**: The cVdP=3.7 for `piagets_adaptive` (vs 70 for all others) is a warmup artifact: VdP tasks converge within the 30-epoch warmup phase (only $W_A$ and $h$ adapt, which is sufficient for the simple VdP limit cycle), so `conv_half_epochs` reflects warmup convergence. More critically, c\_ass=nan for all episodes — the probe never fired assimilation — because the annealing phase causes `store_task` to compute φ embeddings from near-unconstrained models, increasing within-class φ variance, which inflates the intra-class spread used to set the probe threshold. With a higher threshold, the probe always classifies tasks as accommodation. The probe overhead (signature Fisher computation) is paid but the adaptive benefit is lost.
+
+**piagets\_ada\_nolora** (adaptive probe, no SLAO, plain EWC on all parameters): Achieves the best ARI (0.384) because plain EWC without SLAO merge keeps parameters closer to task-specific optima, producing cleaner φ clustering. However, dphi\_BWT=+4.661 (second only to baseline's +5.432) reveals heavy forgetting in φ-space — without SLAO's asymmetric $B_\text{merge}$ accumulation, there is no mechanism to preserve past-task attractor geometry. VdP convergence is also very slow (cVdP=134): plain EWC on $W_A$ prevents the fast $W_A$ adaptation that SLAO's QR-reinit enables, so VdP tasks must fight EWC to reshape the nonlinear subspace.
+
+**Key takeaways from Run 8**:
+1. Warmup+annealing successfully closes the MSE gap (piagets beats baseline).
+2. φ-BWT remains negative for SLAO-based methods (−0.35 to −0.36), confirming attractor-geometry retention.
+3. The adaptive probe is disabled by the annealing side-effect on stored centroids; fix needed (snapshot EWC anchor before anneal, use pre-anneal φ for centroid storage).
+4. SLAO (QR-reinit + B\_merge) is essential: `piagets_ada_nolora` shows that removing SLAO while keeping the probe gives better ARI but much worse φ-forgetting.
+
+---
+
 ## 10. Status and Remaining Improvements
 
 ### 10.1 What has been implemented
 
-**φ^{(c)} — soft activation variability (phi\_act\_std)** [implemented]: Added as component (c) in `diff_phi`, making φ 24-dimensional. Effect: within-Lorenz spread compresses (all Lorenz share φ^{(c)}≈0), Lorenz–Torus and Lorenz–VdP oracle gaps widen to 7.8–10.5. Torus–VdP minimum gap increased to 4.045.
+**φ^{(c)} — soft activation variability (phi\_act\_std)** [implemented]: 24-dim φ; within-Lorenz spread compresses (φ^{(c)}≈0 for all Lorenz), Lorenz–Torus/VdP gaps widen to 7.8–10.5, Torus–VdP minimum gap = 4.045.
 
-**Probe-before-append ordering** [implemented]: The schema probe in `store_task` now runs BEFORE appending the current task's φ to `_task_phis`, preventing the probe from always finding distance 0 to itself.
+**Probe-before-append ordering** [implemented]: Schema probe runs before appending current φ to `_task_phis`.
 
-**lam\_accom fallback for empty-tasks list** [implemented]: `schema_probe` returns `lam_accom` when no prior tasks are stored.
+**σ\_schema = 2.0** [implemented]: Widened assimilation window.
 
-**σ\_schema = 2.0** [implemented]: Widened assimilation window; marginally improves piagets\_adaptive.
+**φ-functional regularization** [implemented, §8.12]: `phi_reg_loss` adds L\_φ = λ\_phi ‖φ(θ)−φ\*(class)‖². Finding: conflicts with SLAO B\_merge accumulation at current λ values.
 
-**φ-functional regularization** [implemented, §8.12]: `phi_reg_loss(model, current_class)` computes L\_φ = λ\_phi ‖φ(θ)−φ\*(class)‖². Per-class φ\* stored via EMA in `store_task`. Finding: additive φ-reg (alongside EWC) hurts BWT vs base piagets at current λ settings because it conflicts with SLAO B\_merge accumulation.
+**Dual LoRA block split** [implemented, §8.13]: Asymmetric R\_LIN=2 still shows negative mse\_BWT at r=6; requires larger rank.
 
-**Dual LoRA block split** [implemented, §8.13]: `apply_block_mask` zeros gradients for frozen block after backward. Asymmetric R\_LIN=2 (rank-2 for Lorenz, rank-4 for Torus/VdP) improves over symmetric R\_LIN=3. Still shows negative BWT at r=6.
+**Per-class EWC anchors** [implemented]: Good training-time fit but negative BWT (cross-class W\_B unprotected).
 
-**Per-class EWC anchors** [implemented, §8.12 option 5]: `use_class_ewc=True` maintains separate Fisher and W\_B\* per class. Finding: gives best training-time performance (FWT +2.96, diagonal −8.94) but negative BWT (−2.02) because cross-class W\_B is unprotected.
+**Adaptive λ calibration** [key finding]: λ\_EWC=5, λ\_assim=10, λ\_accom=2 gives the working regime. The accommodation branch must be genuinely plastic (λ\_accom ≪ λ\_EWC) for the probe's assimilation/accommodation distinction to matter.
 
-**φ-only mode** [implemented]: `lam_ewc=0, lam_phi=0.15` — φ-reg as the sole CL mechanism. Good plasticity but insufficient retention on its own.
+**Inverted Fisher EWC** [implemented, run 8]: `invert_fisher=True` releases high-φ-Fisher parameters. Result: near-zero mse\_BWT (+0.038) but driven by SLAO accumulation artifacts rather than genuine retention. Worst training-time MSE (0.301). Not clearly beneficial.
 
-**Adaptive λ calibration** [key finding]: The most impactful discovery across all runs. Reducing LAM\_EWC from 10→5 and LAM\_ACCOM from 4→2 transformed piagets\_adaptive from BWT +0.60/rec\_ora 0.50 to BWT +2.24/rec\_ora 0.90. The schema probe becomes highly effective only when the accommodation branch is genuinely plastic (λ\_accom much less than λ\_EWC), making the assimilation/accommodation distinction meaningful in practice.
+**Warmup+annealing** [implemented, run 8]: `n_warmup=30`, `anneal_frac=1/3`. Successfully closes the MSE gap — piagets (0.2618) beats baseline (0.2747) for the first time. Side effect: disrupts the adaptive probe's centroid calibration (see §10.2 and §9.9).
+
+**MSE backward transfer (mse\_BWT)** [implemented, run 8]: More interpretable than the earlier R-based BWT. Positive = forgetting in reconstruction; baseline mse\_BWT=+0.60, piagets mse\_BWT=+0.46.
+
+**ARI and per-class convergence** [implemented, run 8]: ARI tracks clustering quality of stored φ embeddings; cLor/cTor/cVdP track convergence speed by attractor type.
 
 ### 10.2 Core remaining problem: single-example class recognition
 
@@ -882,8 +965,30 @@ VdP limit cycles are dominated by a single fundamental frequency with strong ove
 
 ### 10.5 Margin-weighted adaptive λ
 
-The current binary adaptive λ (assim=20, accom=4) does not account for how confident the probe is. A continuous version:
+The current binary adaptive λ (assim=10, accom=2) does not account for how confident the probe is. A continuous version:
 
 $$\lambda_t = \lambda_\text{base} \cdot \exp\!\left(\alpha \cdot \frac{\tau - d^*}{\tau}\right)$$
 
 where $d^*$ is the distance to the nearest class centroid and $\tau$ is the threshold. Near the boundary ($d^* \approx \tau$): λ≈λ\_base (moderate). Deep inside a known class ($d^* \ll \tau$): λ grows (strong protection). Far outside all known classes ($d^* \gg \tau$): ACCOMMODATION with λ=λ\_accom. This provides a smooth version of the binary switch, with naturally wider protection for high-confidence assimilation decisions.
+
+### 10.6 Future direction: ReLU-unit subspace allocation
+
+The AL-RNN's nonlinear capacity is determined by which units have ReLU gates (indices $0 \leq i < P$). Currently all $P=6$ units are active for every task. A natural extension — analogous to AdaLoRA's rank allocation per layer — is to allocate *different subsets* of the $P$ units to different tasks:
+
+**Idea**: partition the $P$ ReLU units into $K$ groups of size $P/K$. Task $t$ of class $c$ activates only group $g(c)$; the remaining units are held linear ($g(z)_i = z_i$) during task $t$'s training. After training, only the $W_B$ columns and $W_A$ rows corresponding to active units are updated; the rest are frozen by gradient masking.
+
+$$g_t(z)_i = \begin{cases} \mathrm{relu}(z_i) & i \in \mathcal{G}(c_t) \\ z_i & \text{otherwise} \end{cases}, \qquad |\mathcal{G}(c)| = P/K$$
+
+With $P=6$, $K=3$ classes: each class gets 2 dedicated ReLU units. Lorenz (class 0) → units {0, 1}; Torus (class 1) → units {2, 3}; VdP (class 2) → units {4, 5}. The corresponding $W_B$ columns $\{:, 0:2\}$, $\{:, 2:4\}$, $\{:, 4:6\}$ are class-exclusive.
+
+**Why this might help**:
+- *Structural forgetting prevention*: a new task cannot modify the nonlinear subspace of a previous class, since those $W_B$ columns are gradient-masked. This is the same logic as the dual-LoRA block split (§8.13) but applied at the AL-RNN level rather than the LoRA level.
+- *SLAO compatibility*: QR-reinit can be applied to only the active-unit columns of $W_A$, leaving the inactive columns unchanged. $B_\text{merge}$ EMA accumulates per-class column blocks independently.
+- *φ-clustering benefit*: with class-exclusive ReLU units, φ^{(b)} and φ^{(c)} (activation rates and variability) will differ strongly by class, sharpening φ-space separation and potentially improving ARI.
+
+**Key difference from §8.13 dual-LoRA split**: The §8.13 split divides LoRA rank between Lorenz and {Torus, VdP}. The ReLU-unit split divides the *nonlinear gate selection* between all three classes, operating at the level of which input dimensions can produce nonlinear dynamics, not just which output directions. This is more expressive: two tasks assigned to different ReLU units can still share the full $W_B$ column space; the difference is in which input gates activate each column at inference time.
+
+**Open questions**:
+- Does 2 ReLU units per class provide sufficient capacity? With $P_\text{eff}=2$, the model has $2^2=4$ linear regions per class. For Lorenz (1-region attractor) this is fine; for Torus/VdP (multi-region) it may be insufficient, requiring $P_\text{eff}=3$ or adaptive allocation.
+- How to handle schema recognition when the "active unit" assignment is unknown at test time? The φ probe could first identify the class, then switch on the corresponding unit group before running the model.
+- SLAO's QR-reinit on partial columns: the QR decomposition should be restricted to the active-unit rows of $W_A$ and columns of $W_B$ to maintain orthogonality within the task-specific subspace.

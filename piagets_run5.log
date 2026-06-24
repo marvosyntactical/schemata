@@ -1,0 +1,323 @@
+================================================================
+Step 1: Oracle models
+================================================================
+
+  Oracle Lor_r28 (class=0)
+  [ora/Lor_r28]   ep   1/300  recon=0.28354  ewc=0.00000
+  [ora/Lor_r28]   ep  50/300  recon=0.21509  ewc=0.00000
+  [ora/Lor_r28]   ep 100/300  recon=0.19751  ewc=0.00000
+  [ora/Lor_r28]   ep 150/300  recon=0.15415  ewc=0.00000
+  [ora/Lor_r28]   ep 200/300  recon=0.14677  ewc=0.00000
+  [ora/Lor_r28]   ep 250/300  recon=0.18846  ewc=0.00000
+  [ora/Lor_r28]   ep 300/300  recon=0.46495  ewc=0.00000
+    n_regions=1  φ_last3=[ 2.5274931e-04  1.2695912e+00 -4.2802647e-02]
+
+  Oracle Tor_0.382 (class=1)
+  [ora/Tor_0.382]   ep   1/300  recon=0.08036  ewc=0.00000
+  [ora/Tor_0.382]   ep  50/300  recon=-0.00824  ewc=0.00000
+  [ora/Tor_0.382]   ep 100/300  recon=-0.02470  ewc=0.00000
+  [ora/Tor_0.382]   ep 150/300  recon=-0.02521  ewc=0.00000
+  [ora/Tor_0.382]   ep 200/300  recon=-0.02349  ewc=0.00000
+  [ora/Tor_0.382]   ep 250/300  recon=-0.01552  ewc=0.00000
+  [ora/Tor_0.382]   ep 300/300  recon=0.02439  ewc=0.00000
+    n_regions=20  φ_last3=[ 4.2888162e-01  7.2951770e-01 -8.1179984e-05]
+
+  Oracle VdP_m1.5 (class=2)
+  [ora/VdP_m1.5]   ep   1/300  recon=0.10320  ewc=0.00000
+  [ora/VdP_m1.5]   ep  50/300  recon=0.03067  ewc=0.00000
+  [ora/VdP_m1.5]   ep 100/300  recon=0.02254  ewc=0.00000
+  [ora/VdP_m1.5]   ep 150/300  recon=0.02186  ewc=0.00000
+  [ora/VdP_m1.5]   ep 200/300  recon=0.02229  ewc=0.00000
+  [ora/VdP_m1.5]   ep 250/300  recon=0.02387  ewc=0.00000
+  [ora/VdP_m1.5]   ep 300/300  recon=0.03008  ewc=0.00000
+    n_regions=10  φ_last3=[0.39621854 0.4688394  0.00181445]
+
+  Oracle Lor_r35 (class=0)
+  [ora/Lor_r35]   ep   1/300  recon=0.31347  ewc=0.00000
+  [ora/Lor_r35]   ep  50/300  recon=0.27834  ewc=0.00000
+  [ora/Lor_r35]   ep 100/300  recon=0.19838  ewc=0.00000
+  [ora/Lor_r35]   ep 150/300  recon=0.15178  ewc=0.00000
+  [ora/Lor_r35]   ep 200/300  recon=0.16069  ewc=0.00000
+  [ora/Lor_r35]   ep 250/300  recon=0.22923  ewc=0.00000
+  [ora/Lor_r35]   ep 300/300  recon=0.51627  ewc=0.00000
+    n_regions=1  φ_last3=[ 1.6843651e-04  1.2400362e+00 -3.6107477e-02]
+
+  Oracle Tor_0.618 (class=1)
+  [ora/Tor_0.618]   ep   1/300  recon=0.08119  ewc=0.00000
+  [ora/Tor_0.618]   ep  50/300  recon=-0.01030  ewc=0.00000
+  [ora/Tor_0.618]   ep 100/300  recon=-0.02483  ewc=0.00000
+  [ora/Tor_0.618]   ep 150/300  recon=-0.02441  ewc=0.00000
+  [ora/Tor_0.618]   ep 200/300  recon=-0.02130  ewc=0.00000
+  [ora/Tor_0.618]   ep 250/300  recon=-0.01229  ewc=0.00000
+  [ora/Tor_0.618]   ep 300/300  recon=0.03324  ewc=0.00000
+    n_regions=14  φ_last3=[0.44864783 0.4918042  0.00618995]
+
+  Oracle VdP_m3.0 (class=2)
+  [ora/VdP_m3.0]   ep   1/300  recon=0.10346  ewc=0.00000
+  [ora/VdP_m3.0]   ep  50/300  recon=0.03023  ewc=0.00000
+  [ora/VdP_m3.0]   ep 100/300  recon=0.02419  ewc=0.00000
+  [ora/VdP_m3.0]   ep 150/300  recon=0.02477  ewc=0.00000
+  [ora/VdP_m3.0]   ep 200/300  recon=0.02625  ewc=0.00000
+  [ora/VdP_m3.0]   ep 250/300  recon=0.02890  ewc=0.00000
+  [ora/VdP_m3.0]   ep 300/300  recon=0.03651  ewc=0.00000
+    n_regions=10  φ_last3=[ 0.42113236  0.6272106  -0.00106345]
+
+  Oracle Lor_r40 (class=0)
+  [ora/Lor_r40]   ep   1/300  recon=0.33354  ewc=0.00000
+  [ora/Lor_r40]   ep  50/300  recon=0.30446  ewc=0.00000
+  [ora/Lor_r40]   ep 100/300  recon=0.21631  ewc=0.00000
+  [ora/Lor_r40]   ep 150/300  recon=0.16992  ewc=0.00000
+  [ora/Lor_r40]   ep 200/300  recon=0.18012  ewc=0.00000
+  [ora/Lor_r40]   ep 250/300  recon=0.24022  ewc=0.00000
+  [ora/Lor_r40]   ep 300/300  recon=0.49122  ewc=0.00000
+    n_regions=1  φ_last3=[ 1.4983847e-04  1.2990671e+00 -3.6733400e-02]
+
+  Oracle VdP_m5.0 (class=2)
+  [ora/VdP_m5.0]   ep   1/300  recon=0.10215  ewc=0.00000
+  [ora/VdP_m5.0]   ep  50/300  recon=0.03124  ewc=0.00000
+  [ora/VdP_m5.0]   ep 100/300  recon=0.02601  ewc=0.00000
+  [ora/VdP_m5.0]   ep 150/300  recon=0.02615  ewc=0.00000
+  [ora/VdP_m5.0]   ep 200/300  recon=0.02745  ewc=0.00000
+  [ora/VdP_m5.0]   ep 250/300  recon=0.03113  ewc=0.00000
+  [ora/VdP_m5.0]   ep 300/300  recon=0.04535  ewc=0.00000
+    n_regions=9  φ_last3=[0.22632861 0.761652   0.00705565]
+
+  Oracle Tor_0.271 (class=1)
+  [ora/Tor_0.271]   ep   1/300  recon=0.08034  ewc=0.00000
+  [ora/Tor_0.271]   ep  50/300  recon=-0.00746  ewc=0.00000
+  [ora/Tor_0.271]   ep 100/300  recon=-0.02373  ewc=0.00000
+  [ora/Tor_0.271]   ep 150/300  recon=-0.02517  ewc=0.00000
+  [ora/Tor_0.271]   ep 200/300  recon=-0.02365  ewc=0.00000
+  [ora/Tor_0.271]   ep 250/300  recon=-0.01547  ewc=0.00000
+  [ora/Tor_0.271]   ep 300/300  recon=0.02704  ewc=0.00000
+    n_regions=12  φ_last3=[0.4375579  0.7271976  0.00519194]
+
+  Oracle Lor_r45 (class=0)
+  [ora/Lor_r45]   ep   1/300  recon=0.36529  ewc=0.00000
+  [ora/Lor_r45]   ep  50/300  recon=0.33421  ewc=0.00000
+  [ora/Lor_r45]   ep 100/300  recon=0.24499  ewc=0.00000
+  [ora/Lor_r45]   ep 150/300  recon=0.18522  ewc=0.00000
+  [ora/Lor_r45]   ep 200/300  recon=0.16687  ewc=0.00000
+  [ora/Lor_r45]   ep 250/300  recon=0.22803  ewc=0.00000
+  [ora/Lor_r45]   ep 300/300  recon=0.49822  ewc=0.00000
+    n_regions=1  φ_last3=[ 0.00482543  1.2117896  -0.02973793]
+
+  φ scale: min=0.020  max=0.339
+
+  Oracle pairwise φ-distance matrix:
+              Lor_r28   Tor_0.382  VdP_m1.5  Lor_r35   Tor_0.618  VdP_m3.0  Lor_r40   VdP_m5.0  Tor_0.271  Lor_r45 
+  Lor_r28        0.000     8.661     8.554     4.810     8.538     8.506     4.405     9.407     8.251     6.308
+  Tor_0.382      8.661     0.000     4.200     7.953     2.707     5.138     9.022     5.816     3.469     9.553
+  VdP_m1.5       8.554     4.200     0.000     8.342     4.106     4.037     8.748     3.955     4.894     9.062
+  Lor_r35        4.810     7.953     8.342     0.000     7.884     7.770     3.056     8.700     7.784     6.740
+  Tor_0.618      8.538     2.707     4.106     7.884     0.000     4.173     8.768     5.960     2.785     9.873
+  VdP_m3.0       8.506     5.138     4.037     7.770     4.173     0.000     8.518     5.064     4.045    10.539
+  Lor_r40        4.405     9.022     8.748     3.056     8.768     8.518     0.000     9.484     8.967     6.571
+  VdP_m5.0       9.407     5.816     3.955     8.700     5.960     5.064     9.484     0.000     6.508    10.172
+  Tor_0.271      8.251     3.469     4.894     7.784     2.785     4.045     8.967     6.508     0.000     9.998
+  Lor_r45        6.308     9.553     9.062     6.740     9.873    10.539     6.571    10.172     9.998     0.000
+
+================================================================
+Step 2: Sequential CL
+================================================================
+
+────────────────────────────────────────────────────────────
+  Method: PIAGETS_ORTHO
+────────────────────────────────────────────────────────────
+
+  t=0 Lor_r28 (class=0)
+    mse_start=0.84973
+  [piagets_ortho/Lor_r28]   ep   1/300  recon=0.28084  ewc=0.00000
+  [piagets_ortho/Lor_r28]   ep  50/300  recon=0.20522  ewc=0.00000
+  [piagets_ortho/Lor_r28]   ep 100/300  recon=0.19388  ewc=0.00000
+  [piagets_ortho/Lor_r28]   ep 150/300  recon=0.15262  ewc=0.00000
+  [piagets_ortho/Lor_r28]   ep 200/300  recon=0.14961  ewc=0.00000
+  [piagets_ortho/Lor_r28]   ep 250/300  recon=0.22508  ewc=0.00000
+  [piagets_ortho/Lor_r28]   ep 300/300  recon=0.48358  ewc=0.00000
+    conv_half=300ep  mode=A
+    mse_recon=0.57431
+  [SLAO] computing sig-Fisher (task 1) …
+  [SLAO] task 1 stored. λ_ema=1.000  F_B.max=1.000  φ[-3:]=[ 0.24375913  1.1041293  -0.0231936 ]
+    rec_ora=1  rec_cen=1  nearest=Lor_r28
+
+  t=1 Tor_0.382 (class=1)
+  [probe_φ] φ_act_std=0.001  near_c=0  d=1.438  thr=0.200  → ACCOMMODATION  λ=2.0
+  [SLAO] qr_init: W_A ← Q^T (ortho rows)  W_B ← B_prev
+    mse_start=0.94157
+  [piagets_ortho/Tor_0.382]   ep   1/350  recon=0.64040  ewc=0.00000
+  [piagets_ortho/Tor_0.382]   ep  50/350  recon=0.03277  ewc=0.01272
+  [piagets_ortho/Tor_0.382]   ep 100/350  recon=0.00360  ewc=0.00935
+  [piagets_ortho/Tor_0.382]   ep 150/350  recon=0.00145  ewc=0.00834
+  [piagets_ortho/Tor_0.382]   ep 200/350  recon=0.00567  ewc=0.00830
+  [piagets_ortho/Tor_0.382]   ep 250/350  recon=0.01702  ewc=0.00931
+  [piagets_ortho/Tor_0.382]   ep 300/350  recon=0.03465  ewc=0.01184
+  [piagets_ortho/Tor_0.382]   ep 350/350  recon=0.07930  ewc=0.01753
+    conv_half=4ep  mode=A
+    mse_recon=0.11532
+  [SLAO] computing sig-Fisher (task 2) …
+  [SLAO] task 2 stored. λ_ema=0.707  F_B.max=1.000  φ[-3:]=[0.17125571 0.42077568 0.00517188]
+    rec_ora=1  rec_cen=1  nearest=Tor_0.382
+
+  t=2 VdP_m1.5 (class=2)
+  [probe_φ] φ_act_std=0.242  near_c=0  d=81.518  thr=0.200  → ACCOMMODATION  λ=2.0
+  [SLAO] qr_init: W_A ← Q^T (ortho rows)  W_B ← B_prev
+    mse_start=0.39526
+  [piagets_ortho/VdP_m1.5]   ep   1/200  recon=0.03692  ewc=0.00202
+  [piagets_ortho/VdP_m1.5]   ep  50/200  recon=0.02448  ewc=0.00063
+  [piagets_ortho/VdP_m1.5]   ep 100/200  recon=0.02529  ewc=0.00077
+  [piagets_ortho/VdP_m1.5]   ep 150/200  recon=0.02790  ewc=0.00116
+  [piagets_ortho/VdP_m1.5]   ep 200/200  recon=0.04097  ewc=0.00185
+    conv_half=200ep  mode=A
+    mse_recon=0.02002
+  [SLAO] computing sig-Fisher (task 3) …
+  [SLAO] task 3 stored. λ_ema=0.577  F_B.max=1.000  φ[-3:]=[0.26675785 0.1568852  0.00827092]
+    rec_ora=1  rec_cen=1  nearest=VdP_m1.5
+
+  t=3 Lor_r35 (class=0)
+  [probe_φ] φ_act_std=0.180  near_c=0  d=19.364  thr=0.200  → ACCOMMODATION  λ=2.0
+  [SLAO] qr_init: W_A ← Q^T (ortho rows)  W_B ← B_prev
+    mse_start=1.03376
+  [piagets_ortho/Lor_r35]   ep   1/300  recon=0.37821  ewc=0.31203
+  [piagets_ortho/Lor_r35]   ep  50/300  recon=0.20870  ewc=0.13899
+  [piagets_ortho/Lor_r35]   ep 100/300  recon=0.10644  ewc=0.09453
+  [piagets_ortho/Lor_r35]   ep 150/300  recon=0.12144  ewc=0.07121
+  [piagets_ortho/Lor_r35]   ep 200/300  recon=0.17286  ewc=0.06422
+  [piagets_ortho/Lor_r35]   ep 250/300  recon=0.23429  ewc=0.06269
+  [piagets_ortho/Lor_r35]   ep 300/300  recon=0.54793  ewc=0.06548
+    conv_half=300ep  mode=A
+    mse_recon=0.61735
+  [SLAO] computing sig-Fisher (task 4) …
+  [SLAO] task 4 stored. λ_ema=0.500  F_B.max=1.000  φ[-3:]=[ 0.22087695  1.2907143  -0.02548139]
+    rec_ora=1  rec_cen=1  nearest=Lor_r28
+
+  t=4 Tor_0.618 (class=1)
+  [probe_φ] φ_act_std=0.001  near_c=0  d=13.249  thr=3.400  → ACCOMMODATION  λ=2.0
+  [SLAO] qr_init: W_A ← Q^T (ortho rows)  W_B ← B_prev
+    mse_start=0.87290
+  [piagets_ortho/Tor_0.618]   ep   1/350  recon=0.10899  ewc=0.15402
+  [piagets_ortho/Tor_0.618]   ep  50/350  recon=-0.01746  ewc=0.04308
+  [piagets_ortho/Tor_0.618]   ep 100/350  recon=-0.02106  ewc=0.01654
+  [piagets_ortho/Tor_0.618]   ep 150/350  recon=-0.01998  ewc=0.01161
+  [piagets_ortho/Tor_0.618]   ep 200/350  recon=-0.01688  ewc=0.01094
+  [piagets_ortho/Tor_0.618]   ep 250/350  recon=-0.01019  ewc=0.01171
+  [piagets_ortho/Tor_0.618]   ep 300/350  recon=0.00527  ewc=0.01370
+  [piagets_ortho/Tor_0.618]   ep 350/350  recon=0.05722  ewc=0.01735
+    conv_half=3ep  mode=A
+    mse_recon=0.09563
+  [SLAO] computing sig-Fisher (task 5) …
+  [SLAO] task 5 stored. λ_ema=0.447  F_B.max=1.000  φ[-3:]=[0.15222247 0.6600011  0.0024864 ]
+    rec_ora=0  rec_cen=0  nearest=Lor_r28
+
+  t=5 VdP_m3.0 (class=2)
+  [probe_φ] φ_act_std=0.101  near_c=1  d=10.160  thr=4.798  → ACCOMMODATION  λ=2.0
+  [SLAO] qr_init: W_A ← Q^T (ortho rows)  W_B ← B_prev
+    mse_start=0.47682
+  [piagets_ortho/VdP_m3.0]   ep   1/200  recon=0.19782  ewc=0.08221
+  [piagets_ortho/VdP_m3.0]   ep  50/200  recon=0.02597  ewc=0.02612
+  [piagets_ortho/VdP_m3.0]   ep 100/200  recon=0.02648  ewc=0.01790
+  [piagets_ortho/VdP_m3.0]   ep 150/200  recon=0.02852  ewc=0.01383
+  [piagets_ortho/VdP_m3.0]   ep 200/200  recon=0.03997  ewc=0.01262
+    conv_half=2ep  mode=A
+    mse_recon=0.02722
+  [SLAO] computing sig-Fisher (task 6) …
+  [SLAO] task 6 stored. λ_ema=0.408  F_B.max=1.000  φ[-3:]=[0.40227416 0.3778082  0.0047888 ]
+    rec_ora=1  rec_cen=0  nearest=VdP_m1.5
+
+  t=6 Lor_r40 (class=0)
+  [probe_φ] φ_act_std=0.138  near_c=0  d=11.095  thr=5.717  → ACCOMMODATION  λ=2.0
+  [SLAO] qr_init: W_A ← Q^T (ortho rows)  W_B ← B_prev
+    mse_start=1.14856
+  [piagets_ortho/Lor_r40]   ep   1/300  recon=0.40613  ewc=0.19997
+  [piagets_ortho/Lor_r40]   ep  50/300  recon=0.20718  ewc=0.07186
+  [piagets_ortho/Lor_r40]   ep 100/300  recon=0.11687  ewc=0.04038
+  [piagets_ortho/Lor_r40]   ep 150/300  recon=0.12878  ewc=0.03064
+  [piagets_ortho/Lor_r40]   ep 200/300  recon=0.16171  ewc=0.02752
+  [piagets_ortho/Lor_r40]   ep 250/300  recon=0.23500  ewc=0.02681
+  [piagets_ortho/Lor_r40]   ep 300/300  recon=0.66638  ewc=0.02669
+    conv_half=300ep  mode=A
+    mse_recon=0.64904
+  [SLAO] computing sig-Fisher (task 7) …
+  [SLAO] task 7 stored. λ_ema=0.378  F_B.max=1.000  φ[-3:]=[ 0.02784294  1.4342816  -0.01827663]
+    rec_ora=0  rec_cen=1  nearest=Tor_0.382
+
+  t=7 VdP_m5.0 (class=2)
+  [probe_φ] φ_act_std=0.000  near_c=1  d=9.147  thr=6.066  → ACCOMMODATION  λ=2.0
+  [SLAO] qr_init: W_A ← Q^T (ortho rows)  W_B ← B_prev
+    mse_start=0.58191
+  [piagets_ortho/VdP_m5.0]   ep   1/200  recon=0.11081  ewc=0.12451
+  [piagets_ortho/VdP_m5.0]   ep  50/200  recon=0.03029  ewc=0.04123
+  [piagets_ortho/VdP_m5.0]   ep 100/200  recon=0.03100  ewc=0.02074
+  [piagets_ortho/VdP_m5.0]   ep 150/200  recon=0.03650  ewc=0.01523
+  [piagets_ortho/VdP_m5.0]   ep 200/200  recon=0.08251  ewc=0.01432
+    conv_half=2ep  mode=A
+    mse_recon=0.05053
+  [SLAO] computing sig-Fisher (task 8) …
+  [SLAO] task 8 stored. λ_ema=0.354  F_B.max=1.000  φ[-3:]=[ 0.45594636  0.9595113  -0.00103904]
+    rec_ora=1  rec_cen=0  nearest=VdP_m1.5
+
+  t=8 Tor_0.271 (class=1)
+  [probe_φ] φ_act_std=0.404  near_c=2  d=4.798  thr=6.767  → ASSIMILATION  λ=10.0
+  [SLAO] qr_init: W_A ← Q^T (ortho rows)  W_B ← B_prev
+    mse_start=20.53042
+  [piagets_ortho/Tor_0.271]   ep   1/350  recon=0.31009  ewc=0.44252
+  [piagets_ortho/Tor_0.271]   ep  50/350  recon=-0.02781  ewc=0.09721
+  [piagets_ortho/Tor_0.271]   ep 100/350  recon=-0.02691  ewc=0.03694
+  [piagets_ortho/Tor_0.271]   ep 150/350  recon=-0.02509  ewc=0.01609
+  [piagets_ortho/Tor_0.271]   ep 200/350  recon=-0.02197  ewc=0.00691
+  [piagets_ortho/Tor_0.271]   ep 250/350  recon=-0.01575  ewc=0.00329
+  [piagets_ortho/Tor_0.271]   ep 300/350  recon=-0.00127  ewc=0.00254
+  [piagets_ortho/Tor_0.271]   ep 350/350  recon=0.05374  ewc=0.00488
+    conv_half=2ep  mode=S
+    mse_recon=0.10565
+  [SLAO] computing sig-Fisher (task 9) …
+  [SLAO] task 9 stored. λ_ema=0.333  F_B.max=1.000  φ[-3:]=[ 0.3950271   0.7413808  -0.00441835]
+    rec_ora=0  rec_cen=0  nearest=VdP_m1.5
+
+  t=9 Lor_r45 (class=0)
+  [probe_φ] φ_act_std=0.000  near_c=0  d=10.699  thr=6.959  → ACCOMMODATION  λ=2.0
+  [SLAO] qr_init: W_A ← Q^T (ortho rows)  W_B ← B_prev
+    mse_start=1.24597
+  [piagets_ortho/Lor_r45]   ep   1/300  recon=0.50338  ewc=0.25809
+  [piagets_ortho/Lor_r45]   ep  50/300  recon=0.33489  ewc=0.08490
+  [piagets_ortho/Lor_r45]   ep 100/300  recon=0.15344  ewc=0.05025
+  [piagets_ortho/Lor_r45]   ep 150/300  recon=0.15745  ewc=0.03238
+  [piagets_ortho/Lor_r45]   ep 200/300  recon=0.19767  ewc=0.02917
+  [piagets_ortho/Lor_r45]   ep 250/300  recon=0.26172  ewc=0.02969
+  [piagets_ortho/Lor_r45]   ep 300/300  recon=0.57191  ewc=0.03077
+    conv_half=300ep  mode=A
+    mse_recon=0.63841
+  [SLAO] computing sig-Fisher (task 10) …
+  [SLAO] task 10 stored. λ_ema=0.316  F_B.max=1.000  φ[-3:]=[ 0.04298373  1.389601   -0.01892302]
+    rec_ora=1  rec_cen=1  nearest=Lor_r45
+  [walltime] piagets_ortho: 299s
+
+================================================================
+Step 3: Metrics
+================================================================
+  method                      BWT      FWT  rec_ora  rec_cen   R_diag   MSE_diag  conv_ass  conv_acc   ms_ass   ms_acc   wtime
+  ----------------------------------------------------------------------------------------------------------------------------
+  piagets_ortho            -1.471   +0.704    0.700    0.600   -10.97    0.28935       2.0     200.0  20.5304   0.8385     299s
+
+
+  R matrix — piagets_ortho  (BWT=-1.4713  rec_ora=0.700  MSE=0.28935):
+  t\i     Lor_r28   Tor_0.382  VdP_m1.5  Lor_r35   Tor_0.618  VdP_m3.0  Lor_r40   VdP_m5.0  Tor_0.271  Lor_r45 
+  t=0  Lor_r28    -11.209                                                                                          
+  t=1  Tor_0.382   -11.764    -7.034                                                                                
+  t=2  VdP_m1.5   -12.281   -10.110    -6.581                                                                      
+  t=3  Lor_r35    -10.925   -11.774   -10.699   -12.540                                                            
+  t=4  Tor_0.618   -10.480   -12.177   -10.433   -11.969   -12.465                                                  
+  t=5  VdP_m3.0   -10.986   -12.569   -11.607   -12.395   -12.869   -14.237                                        
+  t=6  Lor_r40    -10.771   -12.770   -10.508   -11.185   -13.263   -13.378   -11.918                              
+  t=7  VdP_m5.0   -11.119   -13.003   -10.635   -11.646   -13.293   -13.216   -12.238   -12.132                    
+  t=8  Tor_0.271   -11.029   -10.428   -10.050   -11.617   -10.856   -12.763   -12.183   -11.893   -11.589          
+  t=9  Lor_r45    -11.907   -13.481   -10.848   -10.529   -14.151   -13.574   -11.235   -12.491   -14.732    -9.945
+
+  Convergence detail (S=assimilation A=accommodation, epochs-to-half-MSE):
+  piagets_ortho           t0:A300  t1:A  4  t2:A200  t3:A300  t4:A  3  t5:A  2  t6:A300  t7:A  2  t8:S  2  t9:A300
+
+Generating figures …
+  saved fig_piagets_bwt.png
+  saved fig_piagets_final.png
+  saved piagets_bwt_results.txt
+
+Done.
